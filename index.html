@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>KÜRE — Online Strateji Oyunu</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{min-height:100vh;background:linear-gradient(160deg,#0d1b2a,#1b2838 50%,#0d253f);font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;color:#e0e0e0;display:flex;flex-direction:column;align-items:center;user-select:none;-webkit-user-select:none;touch-action:manipulation;padding:14px 8px}
+h1.logo{font-size:36px;font-weight:900;margin:0 0 2px;letter-spacing:8px;background:linear-gradient(135deg,#ff6b6b,#ffa944,#c471ed);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sub{font-size:10px;color:#5a7a9a;letter-spacing:3px;text-transform:uppercase;margin-bottom:10px}
+.auth-box{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:28px 24px;max-width:360px;width:100%;margin-top:20px}
+.auth-box h2{font-size:18px;font-weight:700;margin-bottom:16px;text-align:center}
+.auth-box input,.setting-input{width:100%;padding:12px 14px;border-radius:10px;border:2px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;outline:none;margin-bottom:10px;transition:border .2s}
+.auth-box input:focus,.setting-input:focus{border-color:rgba(255,152,0,0.5)}
+.auth-box input::placeholder,.setting-input::placeholder{color:#556}
+.btn{width:100%;padding:13px;border-radius:11px;border:none;font-size:14px;font-weight:700;cursor:pointer;transition:transform .15s}
+.btn:active{transform:scale(0.97)}
+.btn-primary{background:linear-gradient(135deg,#ff6b6b,#e94560);color:#fff}
+.btn-green{background:linear-gradient(135deg,#43a047,#66bb6a);color:#fff}
+.btn-blue{background:linear-gradient(135deg,#1e88e5,#2196f3);color:#fff}
+.btn-orange{background:linear-gradient(135deg,#fb8c00,#ff9800);color:#fff}
+.btn-purple{background:linear-gradient(135deg,#7b1fa2,#ab47bc);color:#fff}
+.btn-ghost{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#888}
+.btn-red{background:rgba(239,83,80,0.12);border:1px solid rgba(239,83,80,0.25);color:#ef5350}
+.btn-sm{padding:10px;font-size:13px}
+.btn+.btn{margin-top:8px}
+.error{color:#ef5350;font-size:12px;margin-top:8px;text-align:center}
+.lobby-btns{display:flex;flex-direction:column;gap:10px;width:100%;max-width:320px;margin-top:24px}
+.room-code{font-size:38px;font-weight:900;letter-spacing:10px;text-align:center;background:rgba(255,255,255,0.06);border:2px solid rgba(33,150,243,0.4);border-radius:14px;padding:14px 28px;color:#fff;margin:12px 0}
+.room-input{font-size:24px;font-weight:800;letter-spacing:6px;text-align:center;background:rgba(255,255,255,0.06);border:2px solid rgba(255,152,0,0.4);border-radius:14px;padding:12px 20px;color:#fff;outline:none;width:100%}
+.waiting{display:flex;gap:8px;align-items:center;justify-content:center;margin:12px 0}
+.spinner{width:18px;height:18px;border:2.5px solid rgba(102,187,106,0.3);border-top-color:#66bb6a;border-radius:50%;animation:spin .8s linear infinite}
+.timers{display:flex;gap:8px;width:100%;max-width:420px;margin-bottom:6px}
+.timer-card{flex:1;border-radius:12px;padding:8px 10px;text-align:center;transition:all .3s;border:2px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.035)}
+.timer-card.active-purple{background:rgba(156,39,176,0.22);border-color:#9c27b0}
+.timer-card.active-orange{background:rgba(255,152,0,0.22);border-color:#ff9800}
+.timer-card.timeout{border-color:#ef5350!important;background:rgba(239,83,80,0.15)!important}
+.timer-name{font-size:12px;font-weight:700;margin-bottom:2px}
+.timer-name.purple{color:#ce93d8}.timer-name.orange{color:#ffb74d}
+.timer-clock{font-size:22px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:1px}
+.timer-clock.low{color:#ef5350;animation:pulse-red 1s ease infinite}
+.me-tag{font-size:10px;color:#66bb6a;margin-left:3px}
+.score-line{font-size:10px;color:#8899aa;margin-top:2px}.score-line b{color:#fff;font-size:12px}
+.status{width:100%;max-width:420px;text-align:center;margin-bottom:8px;padding:8px;border-radius:10px;font-size:13px;font-weight:600;min-height:36px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;background:rgba(255,255,255,0.025)}
+.status.win{background:rgba(76,175,80,0.15)}.status.match-win{background:rgba(255,215,0,0.15)}
+.board-wrap{background:linear-gradient(145deg,#1e3048,#172538);border-radius:16px;padding:10px;box-shadow:0 8px 32px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07)}
+.board{display:grid;gap:4px}
+.cell{border-radius:50%;display:flex;align-items:center;justify-content:center;position:relative;transition:background .15s,border .15s;border:2px solid rgba(255,255,255,0.045);background:rgba(255,255,255,0.016)}
+.cell.start-row{background:rgba(255,255,255,0.032)}.cell.selected{background:rgba(255,255,255,0.18);border:2.5px solid rgba(255,255,255,0.7)}.cell.valid-move{background:rgba(100,220,120,0.22);border:2.5px dashed rgba(100,220,120,0.8)}.cell.clickable{cursor:pointer}
+.piece{width:76%;height:76%;border-radius:50%;transition:transform .35s ease,opacity .35s ease}
+.piece.purple{background:radial-gradient(circle at 35% 30%,#e1bee7,#ab47bc,#7b1fa2);box-shadow:0 3px 10px rgba(156,39,176,0.5),inset 0 -2px 5px rgba(0,0,0,0.3),inset 0 2px 3px rgba(255,255,255,0.2)}
+.piece.orange{background:radial-gradient(circle at 35% 30%,#ffe0b2,#fb8c00,#e65100);box-shadow:0 3px 10px rgba(255,152,0,0.5),inset 0 -2px 5px rgba(0,0,0,0.3),inset 0 2px 3px rgba(255,255,255,0.2)}
+.piece.selected{transform:scale(1.15)}.piece.capturing{transform:scale(0);opacity:0}
+.move-dot{width:30%;height:30%;border-radius:50%;background:rgba(100,220,120,0.7);box-shadow:0 0 8px rgba(100,220,120,0.4);animation:blink 1.2s ease-in-out infinite}
+.last-move{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(255,255,255,0.12);pointer-events:none}
+.captured-row{display:flex;justify-content:space-between;width:100%;max-width:420px;margin-top:8px;padding:0 4px}
+.cap-group{display:flex;gap:4px;align-items:center}.cap-label{font-size:10px;color:#5a7a9a;margin-right:3px}
+.cap-dot{width:14px;height:14px;border-radius:50%}.cap-dot.empty{border:1.5px dashed rgba(255,255,255,0.1);background:transparent}.cap-dot.purple{background:radial-gradient(circle,#ce93d8,#9c27b0);opacity:.8}.cap-dot.orange{background:radial-gradient(circle,#ffcc80,#ff9800);opacity:.8}
+.btn-row{display:flex;gap:8px;margin-top:12px;width:100%;max-width:420px}.btn-row .btn{flex:1}
+.history{width:100%;max-width:420px;margin-top:10px;background:rgba(255,255,255,0.02);border-radius:10px;padding:8px 12px;max-height:90px;overflow-y:auto;position:relative}
+.hist-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.hist-label{font-size:9px;color:#4a6a8a;text-transform:uppercase;letter-spacing:1.5px}
+.copy-btn{font-size:10px;color:#66bb6a;cursor:pointer;background:none;border:1px solid rgba(102,187,106,0.3);border-radius:6px;padding:2px 8px;font-weight:600}.copy-btn.copied{color:#fff;background:rgba(102,187,106,0.3)}
+.hist-moves{display:flex;flex-wrap:wrap;gap:4px;user-select:text;-webkit-user-select:text}
+.hist-tag{font-size:10px;padding:2px 6px;border-radius:4px}.hist-tag.purple{background:rgba(156,39,176,0.18);color:#ce93d8}.hist-tag.orange{background:rgba(255,152,0,0.18);color:#ffb74d}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal{background:linear-gradient(150deg,#1e3048,#162234);border-radius:18px;padding:22px 20px;max-width:400px;width:100%;max-height:82vh;overflow-y:auto;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 60px rgba(0,0,0,0.6)}
+.modal h2{margin:0 0 16px;font-size:22px;font-weight:900;background:linear-gradient(135deg,#ff6b6b,#ffa944,#c471ed);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.rule{margin-bottom:12px}.rule-title{font-weight:700;font-size:13px;color:#fff;margin-bottom:3px}.rule-desc{font-size:12px;color:#8899aa;line-height:1.6}
+.user-bar{width:100%;max-width:420px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding:4px 8px;background:rgba(255,255,255,0.03);border-radius:8px}
+.user-email{font-size:11px;color:#5a7a9a;overflow:hidden;text-overflow:ellipsis}
+.logout-btn{font-size:11px;color:#ef5350;cursor:pointer;background:none;border:none;font-weight:600}
+.setting-label{font-size:12px;color:#8899aa;margin-bottom:4px;display:block}
+.setting-row{display:flex;gap:8px;margin-bottom:12px;align-items:center}
+.setting-row input[type=number]{width:80px;text-align:center;padding:10px;font-size:16px;font-weight:700}
+.bot-levels{display:flex;flex-direction:column;gap:8px;width:100%;max-width:320px;margin-top:12px}
+.thinking{display:inline-flex;gap:6px;align-items:center;justify-content:center;padding:4px 12px;font-size:12px;color:#ab47bc;width:100%;max-width:420px;white-space:nowrap}
+.thinking .dot{width:6px;height:6px;border-radius:50%;background:#ab47bc;animation:dotPulse 1.2s ease infinite}
+.thinking .dot:nth-child(2){animation-delay:.2s}.thinking .dot:nth-child(3){animation-delay:.4s}
+.hidden{display:none!important}
+@keyframes blink{0%,100%{opacity:.5;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes pulse-red{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes dotPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
+.fade-in{animation:fadeIn .4s ease}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px}
+</style>
+</head>
+<body>
+<!-- AUTH -->
+<div id="authScreen" class="fade-in" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;width:100%">
+  <h1 class="logo">KÜRE</h1><p class="sub">Strateji & Zekâ Oyunu</p>
+  <div class="auth-box"><h2>🔐 Giriş Yap</h2>
+    <input type="email" id="authEmail" placeholder="E-posta adresi" autocomplete="email">
+    <input type="password" id="authPass" placeholder="Şifre" autocomplete="current-password">
+    <button class="btn btn-primary" onclick="doLogin()">Giriş Yap</button>
+    <div id="authError" class="error hidden"></div>
+  </div>
+</div>
+<!-- LOBBY -->
+<div id="lobbyScreen" class="hidden fade-in" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;width:100%">
+  <h1 class="logo">KÜRE</h1><p class="sub">Strateji & Zekâ Oyunu</p>
+  <div class="user-bar" style="max-width:320px"><span class="user-email" id="lobbyEmail"></span><button class="logout-btn" onclick="doLogout()">Çıkış</button></div>
+  <div id="lobbyMenu" class="lobby-btns">
+    <button class="btn btn-green" onclick="startLocal()">🎮 Aynı Cihazda 2 Kişi</button>
+    <button class="btn btn-purple" onclick="showBotSelect()">🤖 Bota Karşı Oyna</button>
+    <button class="btn btn-blue" onclick="showCreate()">🌐 Online Oda Oluştur</button>
+    <button class="btn btn-orange" onclick="showJoin()">🔗 Online Odaya Katıl</button>
+  </div>
+  <!-- Bot Select -->
+  <div id="lobbyBot" class="hidden" style="display:none;flex-direction:column;align-items:center;gap:10px;width:100%;max-width:320px;margin-top:20px">
+    <p style="font-size:14px;color:#aab;text-align:center">🤖 Bot seviyesini seç:</p>
+    <button class="btn btn-green" onclick="pickBotLevel(1)">😊 Kolay — Rastgele+</button>
+    <button class="btn" style="background:linear-gradient(135deg,#26a69a,#4db6ac);color:#fff" onclick="pickBotLevel(2)">😏 Orta-Alt — Skor</button>
+    <button class="btn btn-blue" onclick="pickBotLevel(3)">🧠 Orta — Stratejik</button>
+    <button class="btn" style="background:linear-gradient(135deg,#ef6c00,#ff9800);color:#fff" onclick="pickBotLevel(4)">🔥 Orta-Üst — Minimax 2</button>
+    <button class="btn btn-orange" onclick="pickBotLevel(5)">💪 Zor — Minimax 3</button>
+    <button class="btn btn-purple" onclick="pickBotLevel(6)">🏆 Usta — Minimax 5</button>
+    <button class="btn btn-ghost btn-sm" onclick="backToMenu()">← Geri</button>
+  </div>
+  <!-- Bot Color Select -->
+  <div id="lobbyBotColor" class="hidden" style="display:none;flex-direction:column;align-items:center;gap:10px;width:100%;max-width:320px;margin-top:20px">
+    <p style="font-size:14px;color:#aab;text-align:center">🎨 Hangi rengi oynamak istersin?</p>
+    <button class="btn" style="background:linear-gradient(135deg,#7b1fa2,#ab47bc);color:#fff" onclick="startBot('purple')">🟣 Mor (İlk oynar)</button>
+    <button class="btn" style="background:linear-gradient(135deg,#e65100,#fb8c00);color:#fff" onclick="startBot('orange')">🟠 Turuncu (İkinci oynar)</button>
+    <button class="btn btn-ghost btn-sm" onclick="showBotSelect()">← Geri</button>
+  </div>
+  <!-- Create -->
+  <div id="lobbyCreate" class="hidden" style="display:none;flex-direction:column;align-items:center;gap:12px;width:100%;max-width:320px;margin-top:20px">
+    <p style="font-size:14px;color:#aab;text-align:center">Oda oluştur ve süreyi ayarla:</p>
+    <div style="width:100%"><label class="setting-label">⏱️ Oyuncu başına süre (dk)</label><div class="setting-row"><input type="number" id="timeInput" class="setting-input" value="20" min="1" max="120" style="margin-bottom:0"><span style="font-size:12px;color:#8899aa">dk</span></div></div>
+    <div id="createCodeDisplay" class="room-code hidden"></div>
+    <div id="createWaiting" class="waiting hidden"><div class="spinner"></div><span style="font-size:13px;color:#66bb6a">Rakip bekleniyor...</span></div>
+    <button id="createBtn" class="btn btn-blue" onclick="doCreate()">Oda Oluştur</button>
+    <p id="createHelp" class="hidden" style="font-size:12px;color:#667788;text-align:center">Bu kodu arkadaşına gönder.</p>
+    <button class="btn btn-ghost btn-sm" onclick="backToMenu()">← Geri</button>
+    <div id="createError" class="error hidden"></div>
+  </div>
+  <!-- Join -->
+  <div id="lobbyJoin" class="hidden" style="display:none;flex-direction:column;align-items:center;gap:12px;width:100%;max-width:320px;margin-top:20px">
+    <p style="font-size:14px;color:#aab;text-align:center">Arkadaşının paylaştığı kodu gir:</p>
+    <input class="room-input" id="joinCodeInput" maxlength="6" placeholder="ODA KODU" oninput="this.value=this.value.toUpperCase()">
+    <button class="btn btn-orange" onclick="doJoin()">Odaya Katıl</button>
+    <button class="btn btn-ghost btn-sm" onclick="backToMenu()">← Geri</button>
+    <div id="joinError" class="error hidden"></div>
+  </div>
+</div>
+<!-- GAME -->
+<div id="gameScreen" class="hidden fade-in" style="display:none;flex-direction:column;align-items:center;width:100%">
+  <h1 class="logo" style="font-size:28px">KÜRE</h1>
+  <p class="sub" id="gameSubtitle"></p>
+  <div class="user-bar" style="margin-bottom:6px"><span class="user-email" id="gameEmail"></span><button class="logout-btn" onclick="exitGame()">Lobiye Dön</button></div>
+  <div class="timers" id="timersContainer"></div>
+  <div class="status" id="statusBar"></div>
+  <div class="board-wrap"><div class="board" id="boardGrid"></div></div>
+  <div class="captured-row" id="capturedRow"></div>
+  <div class="btn-row">
+    <button class="btn btn-ghost btn-sm" onclick="toggleRules()">📖</button>
+    <button class="btn btn-ghost btn-sm" onclick="resetCurrentSet()">🔄 Sıfırla</button>
+    <button class="btn btn-red btn-sm" onclick="exitGame()">🚪 Çıkış</button>
+  </div>
+  <div class="history hidden" id="historyBox">
+    <div class="hist-header"><span class="hist-label">Hamle Geçmişi</span><button class="copy-btn" id="copyBtn" onclick="copyMoves()">📋 Kopyala</button></div>
+    <div class="hist-moves" id="histMoves"></div>
+  </div>
+</div>
+<!-- Rules -->
+<div class="modal-bg hidden" id="rulesModal" onclick="toggleRules()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>Küre Oyunu Kuralları</h2>
+    <div class="rule"><div class="rule-title">🎯 Amaç</div><div class="rule-desc">Rakibin 4 taşını ele geçir. 3 set, 2 alan kazanır.</div></div>
+    <div class="rule"><div class="rule-title">🟣 Başlangıç</div><div class="rule-desc">7'şer taş, Mor ilk oynar.</div></div>
+    <div class="rule"><div class="rule-title">↗️ Başlangıç Hareketi</div><div class="rule-desc">Başlangıçtan sadece ileri/çapraz ileri.</div></div>
+    <div class="rule"><div class="rule-title">🔄 Normal Hareket</div><div class="rule-desc">İleri, geri, 4 çapraz. Sağa-sola yok, başlangıça dönüş yok.</div></div>
+    <div class="rule"><div class="rule-title">🏠 Son Satır</div><div class="rule-desc">Rakip sırasında max 1 taş.</div></div>
+    <div class="rule"><div class="rule-title">⚔️ Sıkıştırma</div><div class="rule-desc">Rakibi iki taşınla sıkıştır → al.</div></div>
+    <div class="rule"><div class="rule-title">🛡️ Kendin Girersen</div><div class="rule-desc">Kendi hamlenle araya girersen alınmazsın.</div></div>
+    <div class="rule"><div class="rule-title">🚫 4'lü Yasak</div><div class="rule-desc">Kendi 4'lü sıra oluşturamazsın.</div></div>
+    <button class="btn btn-primary" onclick="toggleRules()" style="margin-top:8px">Anladım!</button>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+firebase.initializeApp({apiKey:"AIzaSyDUGPz5zw37HhyTfkC-CNqNPhBFkKZCju4",authDomain:"kure-game.firebaseapp.com",databaseURL:"https://kure-game-default-rtdb.europe-west1.firebasedatabase.app",projectId:"kure-game",storageBucket:"kure-game.firebasestorage.app",messagingSenderId:"218064550163",appId:"1:218064550163:web:5c618a9c07d602c54502e6"});
+const auth=firebase.auth(),db=firebase.database();
+const SZ=7,P="purple",O="orange",E="",NM={purple:"Mor",orange:"Turuncu"},EM={purple:"🟣",orange:"🟠"},OPP={purple:"orange",orange:"purple"};
+
+let G={mode:null,roomCode:null,myColor:null,board:null,turn:P,sel:null,moves:[],
+  captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:null,matchWin:null,
+  lastTo:null,capAnim:[],hist:[],msg:"",moveCount:0,swapped:false,
+  timers:{purple:1200,orange:1200},timerTotal:1200,lastTickTs:null,
+  botLevel:0,botColor:O,botThinking:false,listener:null,tickInterval:null,cellPx:46};
+
+// ── Presence ──
+let presRef=null,hbInt=null;
+function setupPres(uid){presRef=db.ref('presence/'+uid);presRef.set(firebase.database.ServerValue.TIMESTAMP);presRef.onDisconnect().remove();if(hbInt)clearInterval(hbInt);hbInt=setInterval(()=>{if(presRef)presRef.set(firebase.database.ServerValue.TIMESTAMP)},30000)}
+function clearPres(){if(hbInt){clearInterval(hbInt);hbInt=null}if(presRef){presRef.remove();presRef=null}}
+async function isOnline(uid){try{const s=await db.ref('presence/'+uid).once('value');if(!s.exists())return false;const t=s.val();if(typeof t!=='number')return false;if(Date.now()-t>120000){await db.ref('presence/'+uid).remove();return false}return true}catch(e){return false}}
+
+// ── Board Logic ──
+function mkB(){const b=[];for(let r=0;r<SZ;r++){const w=[];for(let c=0;c<SZ;c++)w.push(r===0?O:r===SZ-1?P:E);b.push(w)}return b}
+function inB(r,c){return r>=0&&r<SZ&&c>=0&&c<SZ}
+function cl(b){return b.map(r=>[...r])}
+function has4(b,r,c,col){
+  // Count total pieces of col on same row (skip starting rows 0 and SZ-1)
+  if(r!==0&&r!==SZ-1){let cnt=0;for(let cc=0;cc<SZ;cc++)if(b[r][cc]===col)cnt++;if(cnt>=4)return true}
+  // Count total on same column
+  {let cnt=0;for(let rr=0;rr<SZ;rr++)if(b[rr][c]===col)cnt++;if(cnt>=4)return true}
+  // Diagonal top-left to bottom-right passing through (r,c)
+  {let cnt=0;let sr=r,sc=c;while(sr>0&&sc>0){sr--;sc--}for(;sr<SZ&&sc<SZ;sr++,sc++)if(b[sr][sc]===col)cnt++;if(cnt>=4)return true}
+  // Diagonal top-right to bottom-left passing through (r,c)
+  {let cnt=0;let sr=r,sc=c;while(sr>0&&sc<SZ-1){sr--;sc++}for(;sr<SZ&&sc>=0;sr++,sc--)if(b[sr][sc]===col)cnt++;if(cnt>=4)return true}
+  return false;
+}
+function fCaps(b,r,c,pl){const op=OPP[pl],res=[],ds=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];for(const[dr,dc]of ds){const mr=r+dr,mc=c+dc;if(inB(mr,mc)&&b[mr][mc]===op){const fr=mr+dr,fc=mc+dc;if(inB(fr,fc)&&b[fr][fc]===pl)res.push([mr,mc])}}return res}
+function allMoves(b,pl){const ms=[];for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++)if(b[r][c]===pl){const vm=getVM(b,r,c,pl);for(const[nr,nc]of vm)ms.push({fr:r,fc:c,tr:nr,tc:nc})}return ms}
+function getVM(b,r,c,pl){if(b[r][c]!==pl)return[];const sr=pl===P?SZ-1:0,on=r===sr;let ds;if(on)ds=pl===P?[[-1,0],[-1,-1],[-1,1]]:[[1,0],[1,-1],[1,1]];else ds=[[-1,0],[1,0],[-1,-1],[-1,1],[1,-1],[1,1]];const obr=pl===P?0:SZ-1,hasOB=b.some((rw,ri)=>ri===obr&&rw.some((cell,ci)=>cell===pl&&!(ri===r&&ci===c)));const out=[];for(const[dr,dc]of ds){const nr=r+dr,nc=c+dc;if(!inB(nr,nc)||b[nr][nc]!==E)continue;if(!on&&nr===sr)continue;if(nr===obr&&hasOB)continue;const s=cl(b);s[r][c]=E;s[nr][nc]=pl;if(has4(s,nr,nc,pl))continue;out.push([nr,nc])}return out}
+function genCode(){const ch="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let c="";for(let i=0;i<5;i++)c+=ch[Math.floor(Math.random()*ch.length)];return c}
+function myEff(){if(G.mode!=='online'||!G.myColor)return G.myColor;return G.swapped?(G.myColor===P?O:P):G.myColor}
+function fmtT(s){if(s<=0)return"0:00";const m=Math.floor(s/60),sc=Math.floor(s%60);return m+':'+(sc<10?'0':'')+sc}
+
+// ── AI Bot ──
+function evalBoard(b,pl){
+  const op=OPP[pl];let score=0;
+  let myPcs=0,opPcs=0;
+  for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
+    if(b[r][c]===pl){myPcs++;score+=10-(Math.abs(r-3)+Math.abs(c-3))*1.5}
+    else if(b[r][c]===op){opPcs++;score-=10-(Math.abs(r-3)+Math.abs(c-3))*1.5}
+  }
+  score+=(7-opPcs)*50-(7-myPcs)*50;
+  const myMov=allMoves(b,pl).length,opMov=allMoves(b,op).length;
+  score+=myMov*2-opMov*2;
+  for(const m of allMoves(b,pl)){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;score+=fCaps(nb,m.tr,m.tc,pl).length*15}
+  for(const m of allMoves(b,op)){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=op;score-=fCaps(nb,m.tr,m.tc,op).length*15}
+  // Penalize lines with 3+ pieces (close to blocked 4) using full-line counting
+  for(const col of[pl,op]){const sign=col===pl?-1:1;
+    // Rows (skip starting rows)
+    for(let r=1;r<SZ-1;r++){let cnt=0;for(let c=0;c<SZ;c++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*25}
+    // Columns
+    for(let c=0;c<SZ;c++){let cnt=0;for(let r=0;r<SZ;r++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*25}
+    // Diagonals
+    for(let s=0;s<SZ*2-1;s++){let cnt1=0,cnt2=0;for(let r=0;r<SZ;r++){const c1=s-r,c2=r-(s-SZ+1);if(c1>=0&&c1<SZ&&b[r][c1]===col)cnt1++;if(c2>=0&&c2<SZ&&b[r][c2]===col)cnt2++}if(cnt1>=4)score+=sign*9999;else if(cnt1===3)score+=sign*25;if(cnt2>=4)score+=sign*9999;else if(cnt2===3)score+=sign*25}
+  }
+  return score;
+}
+function simMove(b,m,pl){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;const caps=fCaps(nb,m.tr,m.tc,pl);for(const[cr,cc]of caps)nb[cr][cc]=E;return{board:nb,caps:caps.length}}
+function minimax(b,pl,depth,alpha,beta,maximizing,botColor){
+  if(depth===0)return evalBoard(b,botColor);
+  const cur=maximizing?botColor:OPP[botColor];
+  const moves=allMoves(b,cur);
+  if(moves.length===0)return maximizing?-9999:9999;
+  if(maximizing){
+    let best=-Infinity;
+    moves.sort((a,x)=>{const sa=simMove(b,a,cur),sb=simMove(b,x,cur);return sb.caps-sa.caps});
+    for(const m of moves){const{board:nb}=simMove(b,m,cur);const val=minimax(nb,OPP[cur],depth-1,alpha,beta,false,botColor);best=Math.max(best,val);alpha=Math.max(alpha,val);if(beta<=alpha)break}
+    return best;
+  }else{
+    let best=Infinity;
+    moves.sort((a,x)=>{const sa=simMove(b,a,cur),sb=simMove(b,x,cur);return sb.caps-sa.caps});
+    for(const m of moves){const{board:nb}=simMove(b,m,cur);const val=minimax(nb,OPP[cur],depth-1,alpha,beta,true,botColor);best=Math.min(best,val);beta=Math.min(beta,val);if(beta<=alpha)break}
+    return best;
+  }
+}
+function botChoose(b,pl,level){
+  const moves=allMoves(b,pl);
+  if(moves.length===0)return null;
+  // L1: Easy — capture or random
+  if(level===1){for(const m of moves){if(simMove(b,m,pl).caps>0)return m}return moves[Math.floor(Math.random()*moves.length)]}
+  // L2: Easy-Med — simple score, no opponent check
+  if(level===2){let best=null,bs=-Infinity;for(const m of moves){const{board:nb,caps}=simMove(b,m,pl);const sc=caps*80+evalBoard(nb,pl)*0.5;if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}}return best}
+  // L3: Medium — score + opponent danger
+  if(level===3){let best=null,bs=-Infinity;for(const m of moves){const{board:nb,caps}=simMove(b,m,pl);let sc=caps*100+evalBoard(nb,pl);for(const om of allMoves(nb,OPP[pl]))sc-=simMove(nb,om,OPP[pl]).caps*80;if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}}return best}
+  // L4: Med-Hard (minimax 2), L5: Hard (minimax 3), L6: Expert (minimax 5)
+  const dp={4:2,5:3,6:5}[level]||3;
+  let best=null,bs=-Infinity;
+  const sc=moves.map(m=>({m,caps:simMove(b,m,pl).caps}));sc.sort((a,x)=>x.caps-a.caps);
+  for(const{m}of sc){const{board:nb}=simMove(b,m,pl);const val=minimax(nb,OPP[pl],dp-1,-Infinity,Infinity,false,pl);if(val>bs){bs=val;best=m}}
+  return best;
+}
+
+function doBotTurn(){
+  if(G.winner||G.matchWin||G.turn!==G.botColor||G.botLevel===0)return;
+  G.botThinking=true;
+  
+  const delay=G.botLevel>=4?100:300;
+  setTimeout(()=>{
+    const move=botChoose(G.board,G.botColor,G.botLevel);
+    G.botThinking=false;
+    
+    if(!move)return;
+    execMove(move.fr,move.fc,move.tr,move.tc);
+  },delay);
+}
+
+// ── Screens ──
+function showScreen(id){['authScreen','lobbyScreen','gameScreen'].forEach(s=>{const el=document.getElementById(s);el.classList.add('hidden');el.style.display='none'});const el=document.getElementById(id);el.classList.remove('hidden');el.style.display='flex'}
+
+// ── Auth ──
+auth.onAuthStateChanged(async u=>{if(u){const on=await isOnline(u.uid);if(on){document.getElementById('authError').textContent="Bu hesap başka bir cihazda açık! (2 dk bekle)";document.getElementById('authError').classList.remove('hidden');auth.signOut();return}setupPres(u.uid);document.getElementById('lobbyEmail').textContent=u.email;document.getElementById('gameEmail').textContent=u.email;showScreen('lobbyScreen');backToMenu()}else{clearPres();showScreen('authScreen')}});
+function doLogin(){const e=document.getElementById('authEmail').value.trim(),p=document.getElementById('authPass').value,er=document.getElementById('authError');er.classList.add('hidden');if(!e||!p){er.textContent="E-posta ve şifre gerekli!";er.classList.remove('hidden');return}auth.signInWithEmailAndPassword(e,p).catch(err=>{let m="Giriş başarısız!";if(err.code==='auth/user-not-found'||err.code==='auth/invalid-credential')m="Kullanıcı bulunamadı veya şifre hatalı!";else if(err.code==='auth/too-many-requests')m="Çok fazla deneme.";er.textContent=m;er.classList.remove('hidden')})}
+function doLogout(){if(G.listener){G.listener();G.listener=null}stopTimer();clearPres();auth.signOut()}
+document.getElementById('authPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+
+// ── Lobby ──
+function backToMenu(){['lobbyMenu','lobbyCreate','lobbyJoin','lobbyBot','lobbyBotColor'].forEach(id=>{const el=document.getElementById(id);el.classList.add('hidden');el.style.display='none'});document.getElementById('lobbyMenu').classList.remove('hidden');document.getElementById('lobbyMenu').style.display='flex';if(G.listener){G.listener();G.listener=null}}
+function showCreate(){hideAllLobby();show('lobbyCreate')}
+function showJoin(){hideAllLobby();show('lobbyJoin');document.getElementById('joinError').classList.add('hidden');document.getElementById('joinCodeInput').value=''}
+function showBotSelect(){hideAllLobby();show('lobbyBot')}
+function hideAllLobby(){['lobbyMenu','lobbyCreate','lobbyJoin','lobbyBot','lobbyBotColor'].forEach(id=>{document.getElementById(id).classList.add('hidden');document.getElementById(id).style.display='none'})}
+function show(id){const el=document.getElementById(id);el.classList.remove('hidden');el.style.display='flex'}
+
+function startLocal(){G.mode='local';G.myColor=null;G.roomCode=null;G.botLevel=0;G.timerTotal=1200;initGame();showScreen('gameScreen');document.getElementById('gameSubtitle').textContent='Yerel — Aynı Cihaz';startTimer()}
+
+let pendingBotLevel=1;
+function pickBotLevel(level){pendingBotLevel=level;hideAllLobby();show('lobbyBotColor')}
+
+function startBot(color){
+  const botColor=color===P?O:P;
+  G.mode='bot';G.myColor=color;G.roomCode=null;G.botLevel=pendingBotLevel;G.timerTotal=1200;G.botColor=botColor;
+  const names=['','😊 Kolay','😏 Orta-Alt','🧠 Orta','🔥 Orta-Üst','💪 Zor','🏆 Usta'];
+  initGame();showScreen('gameScreen');
+  document.getElementById('gameSubtitle').textContent='Bot: '+names[G.botLevel]+' • Sen: '+EM[color]+' '+NM[color];
+  startTimer();
+  // If bot plays first (purple), trigger bot move
+  if(G.botColor===P&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,500);
+}
+
+async function doCreate(){
+  const code=genCode(),uid=auth.currentUser.uid,email=auth.currentUser.email;
+  const mins=parseInt(document.getElementById('timeInput').value)||20,ts=mins*60;
+  try{
+    await db.ref('rooms/'+code).set({board:mkB(),turn:P,captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:'',matchWin:'',lastTo:'',moveCount:0,swapped:false,timers:{purple:ts,orange:ts},timerTotal:ts,hist:[],players:{purple:{uid,email},orange:null},created:firebase.database.ServerValue.TIMESTAMP});
+    document.getElementById('createBtn').classList.add('hidden');
+    document.getElementById('createCodeDisplay').textContent=code;document.getElementById('createCodeDisplay').classList.remove('hidden');
+    document.getElementById('createWaiting').classList.remove('hidden');document.getElementById('createHelp').classList.remove('hidden');
+    const cb=db.ref('rooms/'+code+'/players/orange').on('value',snap=>{if(snap.val()){G.mode='online';G.roomCode=code;G.myColor=P;G.timerTotal=ts;G.botLevel=0;db.ref('rooms/'+code+'/players/orange').off('value',cb);initGame();showScreen('gameScreen');updateSub();listenRoom();startTimer()}});
+    G.listener=()=>db.ref('rooms/'+code+'/players/orange').off('value',cb);
+  }catch(e){document.getElementById('createError').textContent='Hata: '+e.message;document.getElementById('createError').classList.remove('hidden')}
+}
+
+async function doJoin(){
+  const code=document.getElementById('joinCodeInput').value.trim().toUpperCase(),er=document.getElementById('joinError');er.classList.add('hidden');
+  if(code.length<3){er.textContent='Oda kodunu gir!';er.classList.remove('hidden');return}
+  try{const snap=await db.ref('rooms/'+code).once('value');if(!snap.exists()){er.textContent='Oda bulunamadı!';er.classList.remove('hidden');return}const d=snap.val();if(d.players.orange){er.textContent='Oda dolu!';er.classList.remove('hidden');return}
+  await db.ref('rooms/'+code+'/players/orange').set({uid:auth.currentUser.uid,email:auth.currentUser.email});
+  G.mode='online';G.roomCode=code;G.myColor=O;G.timerTotal=d.timerTotal||1200;G.botLevel=0;
+  initGame();const fresh=await db.ref('rooms/'+code).once('value');applyRemote(fresh.val());showScreen('gameScreen');updateSub();listenRoom();startTimer();
+  }catch(e){er.textContent='Hata: '+e.message;er.classList.remove('hidden')}
+}
+
+// ── Timer ──
+function startTimer(){stopTimer();G.lastTickTs=Date.now();G.tickInterval=setInterval(()=>{if(G.winner||G.matchWin)return;const now=Date.now(),dt=(now-G.lastTickTs)/1000;G.lastTickTs=now;G.timers[G.turn]=Math.max(0,G.timers[G.turn]-dt);if(G.timers[G.turn]<=0){G.timers[G.turn]=0;const op=OPP[G.turn];G.sets[op]++;G.winner=op;if(G.sets[op]>=2)G.matchWin=op;G.moveCount++;pushState();stopTimer();render();return}renderTimers()},200)}
+function stopTimer(){if(G.tickInterval){clearInterval(G.tickInterval);G.tickInterval=null}}
+
+// ── Online Sync ──
+function listenRoom(){if(G.listener){G.listener();G.listener=null}const ref=db.ref('rooms/'+G.roomCode);const cb=ref.on('value',snap=>{if(!snap.exists())return;const d=snap.val();if(d.moveCount!==G.moveCount){applyRemote(d);render()}});G.listener=()=>ref.off('value',cb)}
+function applyRemote(d){const b=[];for(let r=0;r<SZ;r++){const w=[];for(let c=0;c<SZ;c++)w.push(d.board[r]?.[c]||E);b.push(w)}G.board=b;G.turn=d.turn||P;G.captured={purple:d.captured?.purple||0,orange:d.captured?.orange||0};G.sets={purple:d.sets?.purple||0,orange:d.sets?.orange||0};G.winner=d.winner||null;G.matchWin=d.matchWin||null;G.lastTo=d.lastTo||null;G.moveCount=d.moveCount||0;G.swapped=!!d.swapped;G.timers={purple:d.timers?.purple??G.timerTotal,orange:d.timers?.orange??G.timerTotal};G.timerTotal=d.timerTotal||1200;G.sel=null;G.moves=[];G.capAnim=[];G.msg='';if(d.hist&&Array.isArray(d.hist))G.hist=d.hist;else if(d.hist&&typeof d.hist==='object')G.hist=Object.values(d.hist);else G.hist=[];G.lastTickTs=Date.now();updateSub()}
+async function pushState(){if(G.mode!=='online')return;try{await db.ref('rooms/'+G.roomCode).update({board:G.board,turn:G.turn,captured:G.captured,sets:G.sets,winner:G.winner||'',matchWin:G.matchWin||'',lastTo:G.lastTo||'',moveCount:G.moveCount,swapped:G.swapped,timers:G.timers,hist:G.hist})}catch(e){}}
+
+// ── Init ──
+function initGame(){G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.sets={purple:0,orange:0};G.winner=null;G.matchWin=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.moveCount=0;G.swapped=false;G.timers={purple:G.timerTotal,orange:G.timerTotal};G.lastTickTs=Date.now();G.botThinking=false;calcPx();render()}
+function calcPx(){G.cellPx=Math.max(34,Math.min(52,Math.floor((Math.min(window.innerWidth||400,480)-52)/SZ)))}
+window.addEventListener('resize',()=>{calcPx();render()});
+function updateSub(){const el=document.getElementById('gameSubtitle');if(!el)return;if(G.mode==='online'){const e=myEff();el.textContent='Online • '+G.roomCode+' • Sen: '+EM[e]+' '+NM[e]+(G.swapped?' (değişti)':'')}else if(G.mode==='bot'){const names=['','😊 Kolay','😏 Orta-Alt','🧠 Orta','🔥 Orta-Üst','💪 Zor','🏆 Usta'];el.textContent='Bot: '+names[G.botLevel]+' • Sen: '+EM[G.myColor]+' '+NM[G.myColor]}else el.textContent='Yerel'}
+
+// ── Render ──
+function render(){renderTimers();renderStatus();renderBoard();renderCaptured();renderHistory()}
+function renderTimers(){document.getElementById('timersContainer').innerHTML=[P,O].map(c=>{const a=G.turn===c&&!G.winner,me=G.mode==='online'&&c===myEff(),bot=G.mode==='bot'&&c===G.botColor,low=G.timers[c]<60&&G.timers[c]>0,to=G.timers[c]<=0;let cls='timer-card';if(a&&!to)cls+=' active-'+c;if(to)cls+=' timeout';return`<div class="${cls}"><div class="timer-name ${c}">${EM[c]} ${NM[c]}${me?'<span class="me-tag">(Sen)</span>':''}${bot?' 🤖':''}${G.mode==='bot'&&c===G.myColor?'<span class="me-tag">(Sen)</span>':''}</div><div class="timer-clock ${low?'low':''}">${fmtT(G.timers[c])}</div><div class="score-line">Alınan: <b>${G.captured[c]}</b>/4 • Set: <b>${G.sets[c]}</b>/2</div></div>`}).join('')}
+function renderStatus(){const el=document.getElementById('statusBar');el.className='status';if(G.matchWin){el.className='status match-win';el.innerHTML=`<span style="color:#ffd700">🏆 ${EM[G.matchWin]} ${NM[G.matchWin]} Maçı Kazandı!</span>`}else if(G.winner){el.className='status win';el.innerHTML=`<span style="color:#66bb6a">${EM[G.winner]} ${NM[G.winner]} seti kazandı!</span><button class="btn btn-green btn-sm" style="width:auto;padding:5px 16px;margin:0" onclick="nextSet()">Sonraki Set →</button>`}else if(G.msg)el.innerHTML=`<span style="color:#ef5350">${G.msg}</span>`;else{const my=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();el.innerHTML=`<span>${G.mode==='bot'&&G.turn===G.botColor?'🤖 Bot düşünüyor...':(EM[G.turn]+' '+NM[G.turn]+(my?' — Senin sıran':' — Bekle...'))}</span>`}}
+function renderBoard(){const grid=document.getElementById('boardGrid'),px=G.cellPx;grid.style.gridTemplateColumns=`repeat(${SZ},${px}px)`;grid.style.gridTemplateRows=`repeat(${SZ},${px}px)`;const flip=(G.mode==='online'&&myEff()===O)||(G.mode==='bot'&&G.myColor===O);grid.style.transform=flip?'rotate(180deg)':'none';let h='';for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){const cell=G.board[r][c],iS=G.sel&&G.sel[0]===r&&G.sel[1]===c,iV=G.moves.some(m=>m[0]===r&&m[1]===c),iC=G.capAnim.some(m=>m[0]===r&&m[1]===c),iSR=r===0||r===SZ-1,iL=G.lastTo&&G.lastTo[0]===r&&G.lastTo[1]===c&&!iS;const myT=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();const ck=!G.winner&&!G.matchWin&&myT&&!G.botThinking;let cls='cell';if(iSR)cls+=' start-row';if(iS)cls+=' selected';if(iV)cls+=' valid-move';if(ck)cls+=' clickable';const cf=flip?'transform:rotate(180deg);':'';h+=`<div class="${cls}" style="width:${px}px;height:${px}px;${cf}" onclick="tap(${r},${c})">`;if(cell){let pc='piece '+cell;if(iS)pc+=' selected';if(iC)pc+=' capturing';h+=`<div class="${pc}"></div>`}if(iV&&!cell)h+=`<div class="move-dot"></div>`;if(iL)h+=`<div class="last-move"></div>`;h+=`</div>`}grid.innerHTML=h}
+function renderCaptured(){document.getElementById('capturedRow').innerHTML=[P,O].map(c=>{const op=OPP[c];let d='';for(let i=0;i<4;i++)d+=i<G.captured[c]?`<div class="cap-dot ${op}"></div>`:`<div class="cap-dot empty"></div>`;return`<div class="cap-group"><span class="cap-label">${NM[c]} aldı:</span>${d}</div>`}).join('')}
+function renderHistory(){const box=document.getElementById('historyBox');if(G.hist.length===0){box.classList.add('hidden');return}box.classList.remove('hidden');document.getElementById('histMoves').innerHTML=G.hist.map((m,i)=>`<span class="hist-tag ${m.p}">${i+1}. ${String.fromCharCode(65+m.f[1])}${SZ-m.f[0]}→${String.fromCharCode(65+m.t[1])}${SZ-m.t[0]}${m.c>0?' ×'+m.c:''}</span>`).join('')}
+function copyMoves(){const t=G.hist.map((m,i)=>`${i+1}. ${NM[m.p]}: ${String.fromCharCode(65+m.f[1])}${SZ-m.f[0]} → ${String.fromCharCode(65+m.t[1])}${SZ-m.t[0]}${m.c>0?' ('+m.c+' alındı)':''}`).join('\n');navigator.clipboard.writeText(t).then(()=>{const b=document.getElementById('copyBtn');b.textContent='✅ Kopyalandı!';b.classList.add('copied');setTimeout(()=>{b.textContent='📋 Kopyala';b.classList.remove('copied')},2000)}).catch(()=>{})}
+
+// ── Execute Move (shared by human & bot) ──
+function execMove(sr,sc,tr,tc){
+  const nb=cl(G.board);nb[sr][sc]=E;nb[tr][tc]=G.turn;
+  const caps=fCaps(nb,tr,tc,G.turn);
+  G.hist.push({p:G.turn,f:[sr,sc],t:[tr,tc],c:caps.length});
+  if(caps.length>0){
+    G.board=nb;G.capAnim=caps;G.sel=null;G.moves=[];G.lastTo=[tr,tc];G.msg='';render();
+    setTimeout(()=>{
+      for(const[cr,cc]of caps)G.board[cr][cc]=E;G.capAnim=[];
+      G.captured[G.turn]+=caps.length;
+      if(G.captured[G.turn]>=4){G.sets[G.turn]++;G.winner=G.turn;if(G.sets[G.turn]>=2)G.matchWin=G.turn}
+      else{G.turn=OPP[G.turn]}
+      G.moveCount++;G.lastTickTs=Date.now();pushState();render();
+      if(G.mode==='bot'&&G.turn===G.botColor&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,200);
+    },420);
+  }else{
+    G.board=nb;G.lastTo=[tr,tc];G.sel=null;G.moves=[];G.msg='';
+    G.turn=OPP[G.turn];G.moveCount++;G.lastTickTs=Date.now();pushState();render();
+    if(G.mode==='bot'&&G.turn===G.botColor&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,200);
+  }
+}
+
+// ── Tap ──
+function tap(r,c){
+  if(G.winner||G.matchWin||G.botThinking)return;
+  const myT=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();
+  if(!myT){showMsg("Rakibin sırası!");return}
+  const cell=G.board[r][c];
+  if(cell===G.turn){const vm=getVM(G.board,r,c,G.turn);if(vm.length>0){G.sel=[r,c];G.moves=vm;G.msg='';render()}else{G.sel=null;G.moves=[];showMsg("Gidecek yer yok!")}return}
+  if(G.sel&&G.moves.some(m=>m[0]===r&&m[1]===c)){execMove(G.sel[0],G.sel[1],r,c);return}
+  G.sel=null;G.moves=[];render();
+}
+function showMsg(t){G.msg=t;render();setTimeout(()=>{G.msg='';render()},2000)}
+
+// ── Actions ──
+async function nextSet(){
+  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';
+  G.swapped=!G.swapped;const tmp=G.sets[P];G.sets[P]=G.sets[O];G.sets[O]=tmp;
+  // Swap player/bot colors in bot mode
+  if(G.mode==='bot'){const tmpC=G.myColor;G.myColor=G.botColor;G.botColor=tmpC}
+  G.timers={purple:G.timerTotal,orange:G.timerTotal};G.moveCount++;G.lastTickTs=Date.now();
+  G.botThinking=false;
+  updateSub();await pushState();startTimer();render();
+  // If bot is now purple (first mover), trigger bot
+  if(G.mode==='bot'&&G.botColor===P&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,500);
+}
+async function resetCurrentSet(){
+  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';
+  G.timers={purple:G.timerTotal,orange:G.timerTotal};G.moveCount++;G.lastTickTs=Date.now();
+  G.botThinking=false;
+  await pushState();render();
+}
+function exitGame(){if(G.listener){G.listener();G.listener=null}stopTimer();showScreen('lobbyScreen');backToMenu()}
+function toggleRules(){document.getElementById('rulesModal').classList.toggle('hidden')}
+window.addEventListener('beforeunload',()=>{clearPres()});
+</script>
+</body>
+</html>
