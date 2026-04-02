@@ -310,8 +310,24 @@ function doLogout(){if(G.listener){G.listener();G.listener=null}stopTimer();clea
 document.getElementById('authPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 
 // ── Lobby ──
-function backToMenu(){['lobbyMenu','lobbyCreate','lobbyJoin','lobbyBot','lobbyBotColor'].forEach(id=>{const el=document.getElementById(id);el.classList.add('hidden');el.style.display='none'});document.getElementById('lobbyMenu').classList.remove('hidden');document.getElementById('lobbyMenu').style.display='flex';if(G.listener){G.listener();G.listener=null}}
-function showCreate(){hideAllLobby();show('lobbyCreate')}
+let pendingRoomCode=null;
+function backToMenu(){
+  // Clean up pending room if we were waiting for opponent
+  if(pendingRoomCode){db.ref('rooms/'+pendingRoomCode).remove().catch(()=>{});pendingRoomCode=null}
+  if(G.listener){G.listener();G.listener=null}
+  ['lobbyMenu','lobbyCreate','lobbyJoin','lobbyBot','lobbyBotColor'].forEach(id=>{const el=document.getElementById(id);el.classList.add('hidden');el.style.display='none'});
+  document.getElementById('lobbyMenu').classList.remove('hidden');document.getElementById('lobbyMenu').style.display='flex';
+}
+function showCreate(){
+  hideAllLobby();show('lobbyCreate');
+  // Reset create UI to fresh state
+  document.getElementById('createCodeDisplay').classList.add('hidden');
+  document.getElementById('createWaiting').classList.add('hidden');
+  document.getElementById('createHelp').classList.add('hidden');
+  document.getElementById('createBtn').classList.remove('hidden');
+  document.getElementById('createError').classList.add('hidden');
+  pendingRoomCode=null;
+}
 function showJoin(){hideAllLobby();show('lobbyJoin');document.getElementById('joinError').classList.add('hidden');document.getElementById('joinCodeInput').value=''}
 function showBotSelect(){hideAllLobby();show('lobbyBot')}
 function hideAllLobby(){['lobbyMenu','lobbyCreate','lobbyJoin','lobbyBot','lobbyBotColor'].forEach(id=>{document.getElementById(id).classList.add('hidden');document.getElementById(id).style.display='none'})}
@@ -334,20 +350,24 @@ function startBot(color){
 }
 
 async function doCreate(){
+  // Clean up any previous pending room
+  if(pendingRoomCode){db.ref('rooms/'+pendingRoomCode).remove().catch(()=>{});pendingRoomCode=null}
+  if(G.listener){G.listener();G.listener=null}
   const code=genCode(),uid=auth.currentUser.uid,email=auth.currentUser.email;
   const mins=parseInt(document.getElementById('timeInput').value)||20,ts=mins*60;
   try{
     await db.ref('rooms/'+code).set({board:mkB(),turn:P,captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:'',matchWin:'',lastTo:'',moveCount:0,swapped:false,timers:{purple:ts,orange:ts},timerTotal:ts,hist:[],locks:[],lastMoveBy:{purple:null,orange:null},players:{purple:{uid,email},orange:null},created:firebase.database.ServerValue.TIMESTAMP});
+    pendingRoomCode=code;
     document.getElementById('createBtn').classList.add('hidden');
     document.getElementById('createCodeDisplay').textContent=code;document.getElementById('createCodeDisplay').classList.remove('hidden');
     document.getElementById('createWaiting').classList.remove('hidden');document.getElementById('createHelp').classList.remove('hidden');
-    // Listen for opponent joining
     const ref=db.ref('rooms/'+code+'/players/orange');
     let joined=false;
     function onOrangeChange(snap){
       if(joined)return;
       if(snap.val()){
         joined=true;
+        pendingRoomCode=null;
         ref.off('value',onOrangeChange);
         G.mode='online';G.roomCode=code;G.myColor=P;G.timerTotal=ts;G.botLevel=0;
         initGame();showScreen('gameScreen');updateSub();listenRoom();startTimer();
@@ -462,7 +482,16 @@ async function resetCurrentSet(){
   G.botThinking=false;
   await pushState();render();
 }
-function exitGame(){if(G.listener){G.listener();G.listener=null}stopTimer();showScreen('lobbyScreen');backToMenu()}
+function exitGame(){
+  if(G.listener){G.listener();G.listener=null}
+  stopTimer();
+  // Delete room if match is over or we're leaving
+  if(G.mode==='online'&&G.roomCode){
+    if(G.matchWin)db.ref('rooms/'+G.roomCode).remove().catch(()=>{});
+  }
+  G.roomCode=null;
+  showScreen('lobbyScreen');backToMenu();
+}
 function toggleRules(){document.getElementById('rulesModal').classList.toggle('hidden')}
 window.addEventListener('beforeunload',()=>{clearPres()});
 </script>
