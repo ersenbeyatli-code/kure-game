@@ -177,7 +177,8 @@ h1.logo{font-size:36px;font-weight:900;margin:0 0 2px;letter-spacing:8px;backgro
     <div class="rule"><div class="rule-title">🏠 Son Satır</div><div class="rule-desc">Rakip sırasında max 1 taş.</div></div>
     <div class="rule"><div class="rule-title">⚔️ Sıkıştırma</div><div class="rule-desc">Rakibi iki taşınla sıkıştır → al.</div></div>
     <div class="rule"><div class="rule-title">🛡️ Kendin Girersen</div><div class="rule-desc">Kendi hamlenle araya girersen alınmazsın.</div></div>
-    <div class="rule"><div class="rule-title">🚫 4'lü Yasak</div><div class="rule-desc">Kendi 4'lü sıra oluşturamazsın.</div></div>
+    <div class="rule"><div class="rule-title">🚫 4'lü Yasak</div><div class="rule-desc">Aynı satırda (başlangıç hariç), sütunda veya çaprazda toplam 4 taşın olamaz — aralarında boşluk olsa bile.</div></div>
+    <div class="rule"><div class="rule-title">🔒 Bölge Kilidi</div><div class="rule-desc">Bir taş A→B gidip sonra B→A dönerse, o taş 2 tur boyunca tekrar B'ye gidemez.</div></div>
     <button class="btn btn-primary" onclick="toggleRules()" style="margin-top:8px">Anladım!</button>
   </div>
 </div>
@@ -194,7 +195,9 @@ let G={mode:null,roomCode:null,myColor:null,board:null,turn:P,sel:null,moves:[],
   captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:null,matchWin:null,
   lastTo:null,capAnim:[],hist:[],msg:"",moveCount:0,swapped:false,
   timers:{purple:1200,orange:1200},timerTotal:1200,lastTickTs:null,
-  botLevel:0,botColor:O,botThinking:false,listener:null,tickInterval:null,cellPx:46};
+  botLevel:0,botColor:O,botThinking:false,
+  locks:[],lastMoveBy:{purple:null,orange:null},
+  listener:null,tickInterval:null,cellPx:46};
 
 // ── Presence ──
 let presRef=null,hbInt=null;
@@ -219,7 +222,7 @@ function has4(b,r,c,col){
 }
 function fCaps(b,r,c,pl){const op=OPP[pl],res=[],ds=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];for(const[dr,dc]of ds){const mr=r+dr,mc=c+dc;if(inB(mr,mc)&&b[mr][mc]===op){const fr=mr+dr,fc=mc+dc;if(inB(fr,fc)&&b[fr][fc]===pl)res.push([mr,mc])}}return res}
 function allMoves(b,pl){const ms=[];for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++)if(b[r][c]===pl){const vm=getVM(b,r,c,pl);for(const[nr,nc]of vm)ms.push({fr:r,fc:c,tr:nr,tc:nc})}return ms}
-function getVM(b,r,c,pl){if(b[r][c]!==pl)return[];const sr=pl===P?SZ-1:0,on=r===sr;let ds;if(on)ds=pl===P?[[-1,0],[-1,-1],[-1,1]]:[[1,0],[1,-1],[1,1]];else ds=[[-1,0],[1,0],[-1,-1],[-1,1],[1,-1],[1,1]];const obr=pl===P?0:SZ-1,hasOB=b.some((rw,ri)=>ri===obr&&rw.some((cell,ci)=>cell===pl&&!(ri===r&&ci===c)));const out=[];for(const[dr,dc]of ds){const nr=r+dr,nc=c+dc;if(!inB(nr,nc)||b[nr][nc]!==E)continue;if(!on&&nr===sr)continue;if(nr===obr&&hasOB)continue;const s=cl(b);s[r][c]=E;s[nr][nc]=pl;if(has4(s,nr,nc,pl))continue;out.push([nr,nc])}return out}
+function getVM(b,r,c,pl){if(b[r][c]!==pl)return[];const sr=pl===P?SZ-1:0,on=r===sr;let ds;if(on)ds=pl===P?[[-1,0],[-1,-1],[-1,1]]:[[1,0],[1,-1],[1,1]];else ds=[[-1,0],[1,0],[-1,-1],[-1,1],[1,-1],[1,1]];const obr=pl===P?0:SZ-1,hasOB=b.some((rw,ri)=>ri===obr&&rw.some((cell,ci)=>cell===pl&&!(ri===r&&ci===c)));const out=[];for(const[dr,dc]of ds){const nr=r+dr,nc=c+dc;if(!inB(nr,nc)||b[nr][nc]!==E)continue;if(!on&&nr===sr)continue;if(nr===obr&&hasOB)continue;const s=cl(b);s[r][c]=E;s[nr][nc]=pl;if(has4(s,nr,nc,pl))continue;if(G.locks.some(lk=>lk.p===pl&&lk.r===r&&lk.c===c&&lk.br===nr&&lk.bc===nc&&lk.t>0))continue;out.push([nr,nc])}return out}
 function genCode(){const ch="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let c="";for(let i=0;i<5;i++)c+=ch[Math.floor(Math.random()*ch.length)];return c}
 function myEff(){if(G.mode!=='online'||!G.myColor)return G.myColor;return G.swapped?(G.myColor===P?O:P):G.myColor}
 function fmtT(s){if(s<=0)return"0:00";const m=Math.floor(s/60),sc=Math.floor(s%60);return m+':'+(sc<10?'0':'')+sc}
@@ -334,12 +337,24 @@ async function doCreate(){
   const code=genCode(),uid=auth.currentUser.uid,email=auth.currentUser.email;
   const mins=parseInt(document.getElementById('timeInput').value)||20,ts=mins*60;
   try{
-    await db.ref('rooms/'+code).set({board:mkB(),turn:P,captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:'',matchWin:'',lastTo:'',moveCount:0,swapped:false,timers:{purple:ts,orange:ts},timerTotal:ts,hist:[],players:{purple:{uid,email},orange:null},created:firebase.database.ServerValue.TIMESTAMP});
+    await db.ref('rooms/'+code).set({board:mkB(),turn:P,captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:'',matchWin:'',lastTo:'',moveCount:0,swapped:false,timers:{purple:ts,orange:ts},timerTotal:ts,hist:[],locks:[],lastMoveBy:{purple:null,orange:null},players:{purple:{uid,email},orange:null},created:firebase.database.ServerValue.TIMESTAMP});
     document.getElementById('createBtn').classList.add('hidden');
     document.getElementById('createCodeDisplay').textContent=code;document.getElementById('createCodeDisplay').classList.remove('hidden');
     document.getElementById('createWaiting').classList.remove('hidden');document.getElementById('createHelp').classList.remove('hidden');
-    const cb=db.ref('rooms/'+code+'/players/orange').on('value',snap=>{if(snap.val()){G.mode='online';G.roomCode=code;G.myColor=P;G.timerTotal=ts;G.botLevel=0;db.ref('rooms/'+code+'/players/orange').off('value',cb);initGame();showScreen('gameScreen');updateSub();listenRoom();startTimer()}});
-    G.listener=()=>db.ref('rooms/'+code+'/players/orange').off('value',cb);
+    // Listen for opponent joining
+    const ref=db.ref('rooms/'+code+'/players/orange');
+    let joined=false;
+    function onOrangeChange(snap){
+      if(joined)return;
+      if(snap.val()){
+        joined=true;
+        ref.off('value',onOrangeChange);
+        G.mode='online';G.roomCode=code;G.myColor=P;G.timerTotal=ts;G.botLevel=0;
+        initGame();showScreen('gameScreen');updateSub();listenRoom();startTimer();
+      }
+    }
+    ref.on('value',onOrangeChange);
+    G.listener=()=>{ref.off('value',onOrangeChange)};
   }catch(e){document.getElementById('createError').textContent='Hata: '+e.message;document.getElementById('createError').classList.remove('hidden')}
 }
 
@@ -358,12 +373,18 @@ function startTimer(){stopTimer();G.lastTickTs=Date.now();G.tickInterval=setInte
 function stopTimer(){if(G.tickInterval){clearInterval(G.tickInterval);G.tickInterval=null}}
 
 // ── Online Sync ──
-function listenRoom(){if(G.listener){G.listener();G.listener=null}const ref=db.ref('rooms/'+G.roomCode);const cb=ref.on('value',snap=>{if(!snap.exists())return;const d=snap.val();if(d.moveCount!==G.moveCount){applyRemote(d);render()}});G.listener=()=>ref.off('value',cb)}
-function applyRemote(d){const b=[];for(let r=0;r<SZ;r++){const w=[];for(let c=0;c<SZ;c++)w.push(d.board[r]?.[c]||E);b.push(w)}G.board=b;G.turn=d.turn||P;G.captured={purple:d.captured?.purple||0,orange:d.captured?.orange||0};G.sets={purple:d.sets?.purple||0,orange:d.sets?.orange||0};G.winner=d.winner||null;G.matchWin=d.matchWin||null;G.lastTo=d.lastTo||null;G.moveCount=d.moveCount||0;G.swapped=!!d.swapped;G.timers={purple:d.timers?.purple??G.timerTotal,orange:d.timers?.orange??G.timerTotal};G.timerTotal=d.timerTotal||1200;G.sel=null;G.moves=[];G.capAnim=[];G.msg='';if(d.hist&&Array.isArray(d.hist))G.hist=d.hist;else if(d.hist&&typeof d.hist==='object')G.hist=Object.values(d.hist);else G.hist=[];G.lastTickTs=Date.now();updateSub()}
-async function pushState(){if(G.mode!=='online')return;try{await db.ref('rooms/'+G.roomCode).update({board:G.board,turn:G.turn,captured:G.captured,sets:G.sets,winner:G.winner||'',matchWin:G.matchWin||'',lastTo:G.lastTo||'',moveCount:G.moveCount,swapped:G.swapped,timers:G.timers,hist:G.hist})}catch(e){}}
+function listenRoom(){
+  if(G.listener){G.listener();G.listener=null}
+  const ref=db.ref('rooms/'+G.roomCode);
+  function onRoomChange(snap){if(!snap.exists())return;const d=snap.val();if(d.moveCount!==G.moveCount){applyRemote(d);render()}}
+  ref.on('value',onRoomChange);
+  G.listener=()=>{ref.off('value',onRoomChange)};
+}
+function applyRemote(d){const b=[];for(let r=0;r<SZ;r++){const w=[];for(let c=0;c<SZ;c++)w.push(d.board[r]?.[c]||E);b.push(w)}G.board=b;G.turn=d.turn||P;G.captured={purple:d.captured?.purple||0,orange:d.captured?.orange||0};G.sets={purple:d.sets?.purple||0,orange:d.sets?.orange||0};G.winner=d.winner||null;G.matchWin=d.matchWin||null;G.lastTo=d.lastTo||null;G.moveCount=d.moveCount||0;G.swapped=!!d.swapped;G.timers={purple:d.timers?.purple??G.timerTotal,orange:d.timers?.orange??G.timerTotal};G.timerTotal=d.timerTotal||1200;G.sel=null;G.moves=[];G.capAnim=[];G.msg='';if(d.hist&&Array.isArray(d.hist))G.hist=d.hist;else if(d.hist&&typeof d.hist==='object')G.hist=Object.values(d.hist);else G.hist=[];if(d.locks&&Array.isArray(d.locks))G.locks=d.locks;else if(d.locks&&typeof d.locks==='object')G.locks=Object.values(d.locks);else G.locks=[];G.lastMoveBy=d.lastMoveBy||{purple:null,orange:null};G.lastTickTs=Date.now();updateSub()}
+async function pushState(){if(G.mode!=='online')return;try{await db.ref('rooms/'+G.roomCode).update({board:G.board,turn:G.turn,captured:G.captured,sets:G.sets,winner:G.winner||'',matchWin:G.matchWin||'',lastTo:G.lastTo||'',moveCount:G.moveCount,swapped:G.swapped,timers:G.timers,hist:G.hist,locks:G.locks,lastMoveBy:G.lastMoveBy})}catch(e){}}
 
 // ── Init ──
-function initGame(){G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.sets={purple:0,orange:0};G.winner=null;G.matchWin=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.moveCount=0;G.swapped=false;G.timers={purple:G.timerTotal,orange:G.timerTotal};G.lastTickTs=Date.now();G.botThinking=false;calcPx();render()}
+function initGame(){G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.sets={purple:0,orange:0};G.winner=null;G.matchWin=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.moveCount=0;G.swapped=false;G.timers={purple:G.timerTotal,orange:G.timerTotal};G.lastTickTs=Date.now();G.botThinking=false;G.locks=[];G.lastMoveBy={purple:null,orange:null};calcPx();render()}
 function calcPx(){G.cellPx=Math.max(34,Math.min(52,Math.floor((Math.min(window.innerWidth||400,480)-52)/SZ)))}
 window.addEventListener('resize',()=>{calcPx();render()});
 function updateSub(){const el=document.getElementById('gameSubtitle');if(!el)return;if(G.mode==='online'){const e=myEff();el.textContent='Online • '+G.roomCode+' • Sen: '+EM[e]+' '+NM[e]+(G.swapped?' (değişti)':'')}else if(G.mode==='bot'){const names=['','😊 Kolay','😏 Orta-Alt','🧠 Orta','🔥 Orta-Üst','💪 Zor','🏆 Usta'];el.textContent='Bot: '+names[G.botLevel]+' • Sen: '+EM[G.myColor]+' '+NM[G.myColor]}else el.textContent='Yerel'}
@@ -379,22 +400,34 @@ function copyMoves(){const t=G.hist.map((m,i)=>`${i+1}. ${NM[m.p]}: ${String.fro
 
 // ── Execute Move (shared by human & bot) ──
 function execMove(sr,sc,tr,tc){
-  const nb=cl(G.board);nb[sr][sc]=E;nb[tr][tc]=G.turn;
-  const caps=fCaps(nb,tr,tc,G.turn);
-  G.hist.push({p:G.turn,f:[sr,sc],t:[tr,tc],c:caps.length});
+  const pl=G.turn;
+  // Decrement this player's existing locks FIRST
+  G.locks=G.locks.map(lk=>lk.p===pl?{...lk,t:lk.t-1}:lk).filter(lk=>lk.t>0);
+  // Zone lock: detect reverse move (A→B then B→A)
+  const lm=G.lastMoveBy[pl];
+  if(lm&&sr===lm.tr&&sc===lm.tc&&tr===lm.fr&&tc===lm.fc){
+    // Piece going back to where it came from — lock this return for 2 of this player's turns
+    G.locks.push({p:pl,r:tr,c:tc,br:sr,bc:sc,t:2});
+  }
+  // Record this move
+  G.lastMoveBy[pl]={fr:sr,fc:sc,tr,tc};
+
+  const nb=cl(G.board);nb[sr][sc]=E;nb[tr][tc]=pl;
+  const caps=fCaps(nb,tr,tc,pl);
+  G.hist.push({p:pl,f:[sr,sc],t:[tr,tc],c:caps.length});
   if(caps.length>0){
     G.board=nb;G.capAnim=caps;G.sel=null;G.moves=[];G.lastTo=[tr,tc];G.msg='';render();
     setTimeout(()=>{
       for(const[cr,cc]of caps)G.board[cr][cc]=E;G.capAnim=[];
-      G.captured[G.turn]+=caps.length;
-      if(G.captured[G.turn]>=4){G.sets[G.turn]++;G.winner=G.turn;if(G.sets[G.turn]>=2)G.matchWin=G.turn}
-      else{G.turn=OPP[G.turn]}
+      G.captured[pl]+=caps.length;
+      if(G.captured[pl]>=4){G.sets[pl]++;G.winner=pl;if(G.sets[pl]>=2)G.matchWin=pl}
+      else{G.turn=OPP[pl]}
       G.moveCount++;G.lastTickTs=Date.now();pushState();render();
       if(G.mode==='bot'&&G.turn===G.botColor&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,200);
     },420);
   }else{
     G.board=nb;G.lastTo=[tr,tc];G.sel=null;G.moves=[];G.msg='';
-    G.turn=OPP[G.turn];G.moveCount++;G.lastTickTs=Date.now();pushState();render();
+    G.turn=OPP[pl];G.moveCount++;G.lastTickTs=Date.now();pushState();render();
     if(G.mode==='bot'&&G.turn===G.botColor&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,200);
   }
 }
@@ -413,7 +446,7 @@ function showMsg(t){G.msg=t;render();setTimeout(()=>{G.msg='';render()},2000)}
 
 // ── Actions ──
 async function nextSet(){
-  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';
+  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.locks=[];G.lastMoveBy={purple:null,orange:null};
   G.swapped=!G.swapped;const tmp=G.sets[P];G.sets[P]=G.sets[O];G.sets[O]=tmp;
   // Swap player/bot colors in bot mode
   if(G.mode==='bot'){const tmpC=G.myColor;G.myColor=G.botColor;G.botColor=tmpC}
@@ -424,7 +457,7 @@ async function nextSet(){
   if(G.mode==='bot'&&G.botColor===P&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,500);
 }
 async function resetCurrentSet(){
-  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';
+  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.locks=[];G.lastMoveBy={purple:null,orange:null};
   G.timers={purple:G.timerTotal,orange:G.timerTotal};G.moveCount++;G.lastTickTs=Date.now();
   G.botThinking=false;
   await pushState();render();
