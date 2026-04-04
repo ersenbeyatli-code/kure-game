@@ -326,8 +326,40 @@ function evalBoard(b,pl){
   return score;
 }
 function simMove(b,m,pl){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;const caps=fCaps(nb,m.tr,m.tc,pl);for(const[cr,cc]of caps)nb[cr][cc]=E;return{board:nb,caps:caps.length}}
+
+// Light eval for deep minimax (no allMoves calls — much faster)
+function evalLight(b,pl){
+  const op=OPP[pl];let score=0;
+  const dirs8=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+  let myN=0,opN=0;
+  for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
+    if(b[r][c]===pl){myN++;score+=10-(Math.abs(r-3)+Math.abs(c-3))*1.2;
+      // Safety quick check
+      let g=0,d=0;for(const[dr,dc]of dirs8){const nr=r+dr,nc=c+dc;if(inB(nr,nc)){if(b[nr][nc]===pl)g++;else if(b[nr][nc]===op){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E)d++}}}score+=g*3-d*6;
+    }else if(b[r][c]===op){opN++;score-=10-(Math.abs(r-3)+Math.abs(c-3))*1.2;
+      let g=0,d=0;for(const[dr,dc]of dirs8){const nr=r+dr,nc=c+dc;if(inB(nr,nc)){if(b[nr][nc]===op)g++;else if(b[nr][nc]===pl){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E)d++}}}score-=g*3-d*6;
+    }
+  }
+  score+=(7-opN)*60-(7-myN)*60;
+  // Trap quick scan
+  for(const[dr,dc]of[[0,1],[1,0],[1,1],[1,-1]]){
+    for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
+      const mr=r+dr,mc=c+dc,fr=r+dr*2,fc=c+dc*2;
+      if(!inB(fr,fc))continue;
+      if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===pl)score+=10;
+      if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===op)score-=10;
+    }
+  }
+  // Line penalty
+  for(const col of[pl,op]){const sign=col===pl?-1:1;
+    for(let r=1;r<SZ-1;r++){let cnt=0;for(let c=0;c<SZ;c++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*20}
+    for(let c=0;c<SZ;c++){let cnt=0;for(let r=0;r<SZ;r++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*20}
+  }
+  return score;
+}
+
 function minimax(b,pl,depth,alpha,beta,maximizing,botColor){
-  if(depth===0)return evalBoard(b,botColor);
+  if(depth===0)return evalLight(b,botColor);
   const cur=maximizing?botColor:OPP[botColor];
   const moves=allMoves(b,cur);
   if(moves.length===0)return maximizing?-9999:9999;
@@ -346,14 +378,11 @@ function minimax(b,pl,depth,alpha,beta,maximizing,botColor){
 function botChoose(b,pl,level){
   const moves=allMoves(b,pl);
   if(moves.length===0)return null;
-  // L1: Easy — capture or random
   if(level===1){for(const m of moves){if(simMove(b,m,pl).caps>0)return m}return moves[Math.floor(Math.random()*moves.length)]}
-  // L2: Easy-Med — simple score, no opponent check
-  if(level===2){let best=null,bs=-Infinity;for(const m of moves){const{board:nb,caps}=simMove(b,m,pl);const sc=caps*80+evalBoard(nb,pl)*0.5;if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}}return best}
-  // L3: Medium — score + opponent danger
+  if(level===2){let best=null,bs=-Infinity;for(const m of moves){const{board:nb,caps}=simMove(b,m,pl);const sc=caps*80+evalLight(nb,pl)*0.5;if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}}return best}
   if(level===3){let best=null,bs=-Infinity;for(const m of moves){const{board:nb,caps}=simMove(b,m,pl);let sc=caps*100+evalBoard(nb,pl);for(const om of allMoves(nb,OPP[pl]))sc-=simMove(nb,om,OPP[pl]).caps*80;if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}}return best}
-  // L4: Med-Hard (minimax 2), L5: Hard (minimax 3), L6: Expert (minimax 5)
-  const dp={4:2,5:3,6:5,7:7}[level]||3;
+  // L4:depth2, L5:depth3, L6:depth5, L7:depth6
+  const dp={4:2,5:3,6:5,7:6}[level]||3;
   let best=null,bs=-Infinity;
   const sc=moves.map(m=>({m,caps:simMove(b,m,pl).caps}));sc.sort((a,x)=>x.caps-a.caps);
   for(const{m}of sc){const{board:nb}=simMove(b,m,pl);const val=minimax(nb,OPP[pl],dp-1,-Infinity,Infinity,false,pl);if(val>bs){bs=val;best=m}}
@@ -363,9 +392,20 @@ function botChoose(b,pl,level){
 function doBotTurn(){
   if(G.winner||G.matchWin||G.turn!==G.botColor||G.botLevel===0)return;
   G.botThinking=true;render();
+  const t0=Date.now();
   setTimeout(()=>{
     const move=botChoose(G.board,G.botColor,G.botLevel);
+    // Deduct thinking time from bot's clock
+    const elapsed=(Date.now()-t0)/1000;
+    G.timers[G.botColor]=Math.max(0,G.timers[G.botColor]-elapsed);
     G.botThinking=false;
+    if(G.timers[G.botColor]<=0){
+      // Bot ran out of time
+      G.timers[G.botColor]=0;
+      const op=OPP[G.botColor];
+      G.sets[op]++;G.winner=op;if(G.sets[op]>=2)G.matchWin=op;
+      G.moveCount++;render();return;
+    }
     if(!move)return;
     execMove(move.fr,move.fc,move.tr,move.tc);
   },50);
