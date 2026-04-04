@@ -104,6 +104,14 @@ h1.logo{font-size:36px;font-weight:900;margin:0 0 2px;letter-spacing:8px;backgro
   <h1 class="logo">KÜRE</h1><p class="sub">Strateji & Zekâ Oyunu</p>
   <div class="user-bar" style="max-width:320px"><span class="user-email" id="lobbyEmail"></span><button class="logout-btn" onclick="doLogout()">Çıkış</button></div>
   <div id="lobbyMenu" class="lobby-btns">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:11px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);margin-bottom:2px">
+      <span style="font-size:13px;color:#ccc;font-weight:600">🏅 Turnuva Modu</span>
+      <label style="position:relative;width:44px;height:24px;cursor:pointer">
+        <input type="checkbox" id="tournamentToggle" style="display:none" onchange="toggleTournament()">
+        <span id="toggleTrack" style="position:absolute;inset:0;border-radius:12px;background:rgba(255,255,255,0.12);transition:background .3s"></span>
+        <span id="toggleThumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#888;transition:all .3s"></span>
+      </label>
+    </div>
     <button class="btn btn-green" onclick="startLocal()">🎮 Aynı Cihazda 2 Kişi</button>
     <button class="btn btn-purple" onclick="showBotSelect()">🤖 Bota Karşı Oyna</button>
     <button class="btn btn-blue" onclick="showCreate()">🌐 Online Oda Oluştur</button>
@@ -118,6 +126,7 @@ h1.logo{font-size:36px;font-weight:900;margin:0 0 2px;letter-spacing:8px;backgro
     <button class="btn" style="background:linear-gradient(135deg,#ef6c00,#ff9800);color:#fff" onclick="pickBotLevel(4)">🔥 Orta-Üst — Minimax 2</button>
     <button class="btn btn-orange" onclick="pickBotLevel(5)">💪 Zor — Minimax 3</button>
     <button class="btn btn-purple" onclick="pickBotLevel(6)">🏆 Usta — Minimax 5</button>
+    <button class="btn" style="background:linear-gradient(135deg,#b71c1c,#d32f2f);color:#fff" onclick="pickBotLevel(7)">👑 Büyükusta — Minimax 7</button>
     <button class="btn btn-ghost btn-sm" onclick="backToMenu()">← Geri</button>
   </div>
   <!-- Bot Color Select -->
@@ -197,6 +206,7 @@ let G={mode:null,roomCode:null,myColor:null,board:null,turn:P,sel:null,moves:[],
   timers:{purple:1200,orange:1200},timerTotal:1200,lastTickTs:null,
   botLevel:0,botColor:O,botThinking:false,
   locks:[],lastMoveBy:{purple:null,orange:null},
+  tournament:false,penalties:{purple:0,orange:0},forcedPiece:null,
   listener:null,tickInterval:null,cellPx:46};
 
 // ── Presence ──
@@ -230,23 +240,87 @@ function fmtT(s){if(s<=0)return"0:00";const m=Math.floor(s/60),sc=Math.floor(s%6
 // ── AI Bot ──
 function evalBoard(b,pl){
   const op=OPP[pl];let score=0;
-  let myPcs=0,opPcs=0;
+  const dirs8=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+
+  // Collect piece positions
+  const myPcs=[],opPcs=[];
   for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
-    if(b[r][c]===pl){myPcs++;score+=10-(Math.abs(r-3)+Math.abs(c-3))*1.5}
-    else if(b[r][c]===op){opPcs++;score-=10-(Math.abs(r-3)+Math.abs(c-3))*1.5}
+    if(b[r][c]===pl)myPcs.push([r,c]);
+    else if(b[r][c]===op)opPcs.push([r,c]);
   }
-  score+=(7-opPcs)*50-(7-myPcs)*50;
+  const totalPieces=myPcs.length+opPcs.length;
+  // Endgame phase: 0.0 (opening, 14 pieces) → 1.0 (endgame, few pieces)
+  const endgame=Math.max(0,1-(totalPieces-4)/10);
+
+  // ── 1. Material (taş avantajı) ──
+  const matW=50+endgame*30; // endgame'de taş daha değerli
+  score+=(7-opPcs.length)*matW-(7-myPcs.length)*matW;
+
+  // ── 2. Center control (merkez) ── azalır endgame'de
+  const cenW=(1-endgame*0.6)*1.5;
+  for(const[r,c]of myPcs)score+=(10-(Math.abs(r-3)+Math.abs(c-3))*cenW);
+  for(const[r,c]of opPcs)score-=(10-(Math.abs(r-3)+Math.abs(c-3))*cenW);
+
+  // ── 3. Mobility ──
   const myMov=allMoves(b,pl).length,opMov=allMoves(b,op).length;
   score+=myMov*2-opMov*2;
-  for(const m of allMoves(b,pl)){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;score+=fCaps(nb,m.tr,m.tc,pl).length*15}
-  for(const m of allMoves(b,op)){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=op;score-=fCaps(nb,m.tr,m.tc,op).length*15}
-  // Penalize lines with 3+ pieces (close to blocked 4) using full-line counting
+
+  // ── 4. Capture threats ──
+  const threatW=15+endgame*10;
+  for(const m of allMoves(b,pl)){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;score+=fCaps(nb,m.tr,m.tc,pl).length*threatW}
+  for(const m of allMoves(b,op)){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=op;score-=fCaps(nb,m.tr,m.tc,op).length*threatW}
+
+  // ── 5. Piece Safety (taş güvenliği) ──
+  // Her taş için: rakip onu sıkıştırabilir mi? Yanında koruyucu dost taş var mı?
+  const safeW=8+endgame*12;
+  for(const[r,c]of myPcs){
+    let danger=0,guard=0;
+    for(const[dr,dc]of dirs8){
+      const nr=r+dr,nc=c+dc;
+      if(!inB(nr,nc))continue;
+      if(b[nr][nc]===pl)guard++;
+      if(b[nr][nc]===op){
+        // Check if opponent piece on other side could sandwich me
+        const fr=r-dr,fc=c-dc;
+        if(inB(fr,fc)&&(b[fr][fc]===E))danger++; // empty behind = vulnerable
+      }
+    }
+    score+=guard*safeW*0.5 - danger*safeW;
+  }
+  for(const[r,c]of opPcs){
+    let danger=0,guard=0;
+    for(const[dr,dc]of dirs8){
+      const nr=r+dr,nc=c+dc;
+      if(!inB(nr,nc))continue;
+      if(b[nr][nc]===op)guard++;
+      if(b[nr][nc]===pl){
+        const fr=r-dr,fc=c-dc;
+        if(inB(fr,fc)&&(b[fr][fc]===E))danger++;
+      }
+    }
+    score-=guard*safeW*0.5 - danger*safeW;
+  }
+
+  // ── 6. Trap Potential (sıkıştırma tuzağı) ──
+  // İki dost taş arasında 1 boşluk = tuzak pozisyonu
+  const trapW=12+endgame*8;
+  for(const[dr,dc]of[[0,1],[1,0],[1,1],[1,-1]]){
+    for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
+      const mr=r+dr,mc=c+dc,fr=r+dr*2,fc=c+dc*2;
+      if(!inB(fr,fc))continue;
+      // My trap: my piece at (r,c), empty at (mr,mc), my piece at (fr,fc)
+      if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===pl)score+=trapW;
+      if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===op)score-=trapW;
+      // Active trap: my piece, opponent piece, my piece = already captured (extra reward)
+      if(b[r][c]===pl&&b[mr][mc]===op&&b[fr][fc]===pl)score+=trapW*2;
+      if(b[r][c]===op&&b[mr][mc]===pl&&b[fr][fc]===op)score-=trapW*2;
+    }
+  }
+
+  // ── 7. Line penalty (4'lü yasak) ──
   for(const col of[pl,op]){const sign=col===pl?-1:1;
-    // Rows (skip starting rows)
     for(let r=1;r<SZ-1;r++){let cnt=0;for(let c=0;c<SZ;c++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*25}
-    // Columns
     for(let c=0;c<SZ;c++){let cnt=0;for(let r=0;r<SZ;r++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*25}
-    // Diagonals
     for(let s=0;s<SZ*2-1;s++){let cnt1=0,cnt2=0;for(let r=0;r<SZ;r++){const c1=s-r,c2=r-(s-SZ+1);if(c1>=0&&c1<SZ&&b[r][c1]===col)cnt1++;if(c2>=0&&c2<SZ&&b[r][c2]===col)cnt2++}if(cnt1>=4)score+=sign*9999;else if(cnt1===3)score+=sign*25;if(cnt2>=4)score+=sign*9999;else if(cnt2===3)score+=sign*25}
   }
   return score;
@@ -279,7 +353,7 @@ function botChoose(b,pl,level){
   // L3: Medium — score + opponent danger
   if(level===3){let best=null,bs=-Infinity;for(const m of moves){const{board:nb,caps}=simMove(b,m,pl);let sc=caps*100+evalBoard(nb,pl);for(const om of allMoves(nb,OPP[pl]))sc-=simMove(nb,om,OPP[pl]).caps*80;if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}}return best}
   // L4: Med-Hard (minimax 2), L5: Hard (minimax 3), L6: Expert (minimax 5)
-  const dp={4:2,5:3,6:5}[level]||3;
+  const dp={4:2,5:3,6:5,7:7}[level]||3;
   let best=null,bs=-Infinity;
   const sc=moves.map(m=>({m,caps:simMove(b,m,pl).caps}));sc.sort((a,x)=>x.caps-a.caps);
   for(const{m}of sc){const{board:nb}=simMove(b,m,pl);const val=minimax(nb,OPP[pl],dp-1,-Infinity,Infinity,false,pl);if(val>bs){bs=val;best=m}}
@@ -288,16 +362,13 @@ function botChoose(b,pl,level){
 
 function doBotTurn(){
   if(G.winner||G.matchWin||G.turn!==G.botColor||G.botLevel===0)return;
-  G.botThinking=true;
-  
-  const delay=G.botLevel>=4?100:300;
+  G.botThinking=true;render();
   setTimeout(()=>{
     const move=botChoose(G.board,G.botColor,G.botLevel);
     G.botThinking=false;
-    
     if(!move)return;
     execMove(move.fr,move.fc,move.tr,move.tc);
-  },delay);
+  },50);
 }
 
 // ── Screens ──
@@ -333,7 +404,14 @@ function showBotSelect(){hideAllLobby();show('lobbyBot')}
 function hideAllLobby(){['lobbyMenu','lobbyCreate','lobbyJoin','lobbyBot','lobbyBotColor'].forEach(id=>{document.getElementById(id).classList.add('hidden');document.getElementById(id).style.display='none'})}
 function show(id){const el=document.getElementById(id);el.classList.remove('hidden');el.style.display='flex'}
 
-function startLocal(){G.mode='local';G.myColor=null;G.roomCode=null;G.botLevel=0;G.timerTotal=1200;initGame();showScreen('gameScreen');document.getElementById('gameSubtitle').textContent='Yerel — Aynı Cihaz';startTimer()}
+function toggleTournament(){
+  const on=document.getElementById('tournamentToggle').checked;
+  document.getElementById('toggleTrack').style.background=on?'rgba(76,175,80,0.5)':'rgba(255,255,255,0.12)';
+  document.getElementById('toggleThumb').style.left=on?'22px':'2px';
+  document.getElementById('toggleThumb').style.background=on?'#66bb6a':'#888';
+}
+
+function startLocal(){G.mode='local';G.myColor=null;G.roomCode=null;G.botLevel=0;G.timerTotal=1200;G.tournament=document.getElementById('tournamentToggle').checked;initGame();showScreen('gameScreen');document.getElementById('gameSubtitle').textContent='Yerel — Aynı Cihaz'+(G.tournament?' 🏅':'');startTimer()}
 
 let pendingBotLevel=1;
 function pickBotLevel(level){pendingBotLevel=level;hideAllLobby();show('lobbyBotColor')}
@@ -341,22 +419,23 @@ function pickBotLevel(level){pendingBotLevel=level;hideAllLobby();show('lobbyBot
 function startBot(color){
   const botColor=color===P?O:P;
   G.mode='bot';G.myColor=color;G.roomCode=null;G.botLevel=pendingBotLevel;G.timerTotal=1200;G.botColor=botColor;
-  const names=['','😊 Kolay','😏 Orta-Alt','🧠 Orta','🔥 Orta-Üst','💪 Zor','🏆 Usta'];
+  G.tournament=document.getElementById('tournamentToggle').checked;
+  const names=['','😊 Kolay','😏 Orta-Alt','🧠 Orta','🔥 Orta-Üst','💪 Zor','🏆 Usta','👑 Büyükusta'];
   initGame();showScreen('gameScreen');
-  document.getElementById('gameSubtitle').textContent='Bot: '+names[G.botLevel]+' • Sen: '+EM[color]+' '+NM[color];
+  document.getElementById('gameSubtitle').textContent='Bot: '+names[G.botLevel]+' • Sen: '+EM[color]+' '+NM[color]+(G.tournament?' 🏅':'');
   startTimer();
   // If bot plays first (purple), trigger bot move
   if(G.botColor===P&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,500);
 }
 
 async function doCreate(){
-  // Clean up any previous pending room
   if(pendingRoomCode){db.ref('rooms/'+pendingRoomCode).remove().catch(()=>{});pendingRoomCode=null}
   if(G.listener){G.listener();G.listener=null}
   const code=genCode(),uid=auth.currentUser.uid,email=auth.currentUser.email;
   const mins=parseInt(document.getElementById('timeInput').value)||20,ts=mins*60;
+  const tourn=document.getElementById('tournamentToggle').checked;
   try{
-    await db.ref('rooms/'+code).set({board:mkB(),turn:P,captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:'',matchWin:'',lastTo:'',moveCount:0,swapped:false,timers:{purple:ts,orange:ts},timerTotal:ts,hist:[],locks:[],lastMoveBy:{purple:null,orange:null},players:{purple:{uid,email},orange:null},created:firebase.database.ServerValue.TIMESTAMP});
+    await db.ref('rooms/'+code).set({board:mkB(),turn:P,captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:'',matchWin:'',lastTo:'',moveCount:0,swapped:false,timers:{purple:ts,orange:ts},timerTotal:ts,hist:[],locks:[],lastMoveBy:{purple:null,orange:null},tournament:tourn,penalties:{purple:0,orange:0},players:{purple:{uid,email},orange:null},created:firebase.database.ServerValue.TIMESTAMP});
     pendingRoomCode=code;
     document.getElementById('createBtn').classList.add('hidden');
     document.getElementById('createCodeDisplay').textContent=code;document.getElementById('createCodeDisplay').classList.remove('hidden');
@@ -366,10 +445,8 @@ async function doCreate(){
     function onOrangeChange(snap){
       if(joined)return;
       if(snap.val()){
-        joined=true;
-        pendingRoomCode=null;
-        ref.off('value',onOrangeChange);
-        G.mode='online';G.roomCode=code;G.myColor=P;G.timerTotal=ts;G.botLevel=0;
+        joined=true;pendingRoomCode=null;ref.off('value',onOrangeChange);
+        G.mode='online';G.roomCode=code;G.myColor=P;G.timerTotal=ts;G.botLevel=0;G.tournament=tourn;
         initGame();showScreen('gameScreen');updateSub();listenRoom();startTimer();
       }
     }
@@ -383,7 +460,7 @@ async function doJoin(){
   if(code.length<3){er.textContent='Oda kodunu gir!';er.classList.remove('hidden');return}
   try{const snap=await db.ref('rooms/'+code).once('value');if(!snap.exists()){er.textContent='Oda bulunamadı!';er.classList.remove('hidden');return}const d=snap.val();if(d.players.orange){er.textContent='Oda dolu!';er.classList.remove('hidden');return}
   await db.ref('rooms/'+code+'/players/orange').set({uid:auth.currentUser.uid,email:auth.currentUser.email});
-  G.mode='online';G.roomCode=code;G.myColor=O;G.timerTotal=d.timerTotal||1200;G.botLevel=0;
+  G.mode='online';G.roomCode=code;G.myColor=O;G.timerTotal=d.timerTotal||1200;G.botLevel=0;G.tournament=!!d.tournament;
   initGame();const fresh=await db.ref('rooms/'+code).once('value');applyRemote(fresh.val());showScreen('gameScreen');updateSub();listenRoom();startTimer();
   }catch(e){er.textContent='Hata: '+e.message;er.classList.remove('hidden')}
 }
@@ -400,20 +477,20 @@ function listenRoom(){
   ref.on('value',onRoomChange);
   G.listener=()=>{ref.off('value',onRoomChange)};
 }
-function applyRemote(d){const b=[];for(let r=0;r<SZ;r++){const w=[];for(let c=0;c<SZ;c++)w.push(d.board[r]?.[c]||E);b.push(w)}G.board=b;G.turn=d.turn||P;G.captured={purple:d.captured?.purple||0,orange:d.captured?.orange||0};G.sets={purple:d.sets?.purple||0,orange:d.sets?.orange||0};G.winner=d.winner||null;G.matchWin=d.matchWin||null;G.lastTo=d.lastTo||null;G.moveCount=d.moveCount||0;G.swapped=!!d.swapped;G.timers={purple:d.timers?.purple??G.timerTotal,orange:d.timers?.orange??G.timerTotal};G.timerTotal=d.timerTotal||1200;G.sel=null;G.moves=[];G.capAnim=[];G.msg='';if(d.hist&&Array.isArray(d.hist))G.hist=d.hist;else if(d.hist&&typeof d.hist==='object')G.hist=Object.values(d.hist);else G.hist=[];if(d.locks&&Array.isArray(d.locks))G.locks=d.locks;else if(d.locks&&typeof d.locks==='object')G.locks=Object.values(d.locks);else G.locks=[];G.lastMoveBy=d.lastMoveBy||{purple:null,orange:null};G.lastTickTs=Date.now();updateSub()}
-async function pushState(){if(G.mode!=='online')return;try{await db.ref('rooms/'+G.roomCode).update({board:G.board,turn:G.turn,captured:G.captured,sets:G.sets,winner:G.winner||'',matchWin:G.matchWin||'',lastTo:G.lastTo||'',moveCount:G.moveCount,swapped:G.swapped,timers:G.timers,hist:G.hist,locks:G.locks,lastMoveBy:G.lastMoveBy})}catch(e){}}
+function applyRemote(d){const b=[];for(let r=0;r<SZ;r++){const w=[];for(let c=0;c<SZ;c++)w.push(d.board[r]?.[c]||E);b.push(w)}G.board=b;G.turn=d.turn||P;G.captured={purple:d.captured?.purple||0,orange:d.captured?.orange||0};G.sets={purple:d.sets?.purple||0,orange:d.sets?.orange||0};G.winner=d.winner||null;G.matchWin=d.matchWin||null;G.lastTo=d.lastTo||null;G.moveCount=d.moveCount||0;G.swapped=!!d.swapped;G.timers={purple:d.timers?.purple??G.timerTotal,orange:d.timers?.orange??G.timerTotal};G.timerTotal=d.timerTotal||1200;G.tournament=!!d.tournament;G.penalties={purple:d.penalties?.purple||0,orange:d.penalties?.orange||0};G.sel=null;G.moves=[];G.capAnim=[];G.msg='';G.forcedPiece=null;if(d.hist&&Array.isArray(d.hist))G.hist=d.hist;else if(d.hist&&typeof d.hist==='object')G.hist=Object.values(d.hist);else G.hist=[];if(d.locks&&Array.isArray(d.locks))G.locks=d.locks;else if(d.locks&&typeof d.locks==='object')G.locks=Object.values(d.locks);else G.locks=[];G.lastMoveBy=d.lastMoveBy||{purple:null,orange:null};G.lastTickTs=Date.now();updateSub()}
+async function pushState(){if(G.mode!=='online')return;try{await db.ref('rooms/'+G.roomCode).update({board:G.board,turn:G.turn,captured:G.captured,sets:G.sets,winner:G.winner||'',matchWin:G.matchWin||'',lastTo:G.lastTo||'',moveCount:G.moveCount,swapped:G.swapped,timers:G.timers,hist:G.hist,locks:G.locks,lastMoveBy:G.lastMoveBy,penalties:G.penalties})}catch(e){}}
 
 // ── Init ──
-function initGame(){G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.sets={purple:0,orange:0};G.winner=null;G.matchWin=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.moveCount=0;G.swapped=false;G.timers={purple:G.timerTotal,orange:G.timerTotal};G.lastTickTs=Date.now();G.botThinking=false;G.locks=[];G.lastMoveBy={purple:null,orange:null};calcPx();render()}
+function initGame(){G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.sets={purple:0,orange:0};G.winner=null;G.matchWin=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.moveCount=0;G.swapped=false;G.timers={purple:G.timerTotal,orange:G.timerTotal};G.lastTickTs=Date.now();G.botThinking=false;G.locks=[];G.lastMoveBy={purple:null,orange:null};G.penalties={purple:0,orange:0};G.forcedPiece=null;calcPx();render()}
 function calcPx(){G.cellPx=Math.max(34,Math.min(52,Math.floor((Math.min(window.innerWidth||400,480)-52)/SZ)))}
 window.addEventListener('resize',()=>{calcPx();render()});
-function updateSub(){const el=document.getElementById('gameSubtitle');if(!el)return;if(G.mode==='online'){const e=myEff();el.textContent='Online • '+G.roomCode+' • Sen: '+EM[e]+' '+NM[e]+(G.swapped?' (değişti)':'')}else if(G.mode==='bot'){const names=['','😊 Kolay','😏 Orta-Alt','🧠 Orta','🔥 Orta-Üst','💪 Zor','🏆 Usta'];el.textContent='Bot: '+names[G.botLevel]+' • Sen: '+EM[G.myColor]+' '+NM[G.myColor]}else el.textContent='Yerel'}
+function updateSub(){const el=document.getElementById('gameSubtitle');if(!el)return;if(G.mode==='online'){const e=myEff();el.textContent='Online • '+G.roomCode+' • Sen: '+EM[e]+' '+NM[e]+(G.swapped?' (değişti)':'')}else if(G.mode==='bot'){const names=['','😊 Kolay','😏 Orta-Alt','🧠 Orta','🔥 Orta-Üst','💪 Zor','🏆 Usta','👑 Büyükusta'];el.textContent='Bot: '+names[G.botLevel]+' • Sen: '+EM[G.myColor]+' '+NM[G.myColor]}else el.textContent='Yerel'}
 
 // ── Render ──
 function render(){renderTimers();renderStatus();renderBoard();renderCaptured();renderHistory()}
-function renderTimers(){document.getElementById('timersContainer').innerHTML=[P,O].map(c=>{const a=G.turn===c&&!G.winner,me=G.mode==='online'&&c===myEff(),bot=G.mode==='bot'&&c===G.botColor,low=G.timers[c]<60&&G.timers[c]>0,to=G.timers[c]<=0;let cls='timer-card';if(a&&!to)cls+=' active-'+c;if(to)cls+=' timeout';return`<div class="${cls}"><div class="timer-name ${c}">${EM[c]} ${NM[c]}${me?'<span class="me-tag">(Sen)</span>':''}${bot?' 🤖':''}${G.mode==='bot'&&c===G.myColor?'<span class="me-tag">(Sen)</span>':''}</div><div class="timer-clock ${low?'low':''}">${fmtT(G.timers[c])}</div><div class="score-line">Alınan: <b>${G.captured[c]}</b>/4 • Set: <b>${G.sets[c]}</b>/2</div></div>`}).join('')}
-function renderStatus(){const el=document.getElementById('statusBar');el.className='status';if(G.matchWin){el.className='status match-win';el.innerHTML=`<span style="color:#ffd700">🏆 ${EM[G.matchWin]} ${NM[G.matchWin]} Maçı Kazandı!</span>`}else if(G.winner){el.className='status win';el.innerHTML=`<span style="color:#66bb6a">${EM[G.winner]} ${NM[G.winner]} seti kazandı!</span><button class="btn btn-green btn-sm" style="width:auto;padding:5px 16px;margin:0" onclick="nextSet()">Sonraki Set →</button>`}else if(G.msg)el.innerHTML=`<span style="color:#ef5350">${G.msg}</span>`;else{const my=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();el.innerHTML=`<span>${G.mode==='bot'&&G.turn===G.botColor?'🤖 Bot düşünüyor...':(EM[G.turn]+' '+NM[G.turn]+(my?' — Senin sıran':' — Bekle...'))}</span>`}}
-function renderBoard(){const grid=document.getElementById('boardGrid'),px=G.cellPx;grid.style.gridTemplateColumns=`repeat(${SZ},${px}px)`;grid.style.gridTemplateRows=`repeat(${SZ},${px}px)`;const flip=(G.mode==='online'&&myEff()===O)||(G.mode==='bot'&&G.myColor===O);grid.style.transform=flip?'rotate(180deg)':'none';let h='';for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){const cell=G.board[r][c],iS=G.sel&&G.sel[0]===r&&G.sel[1]===c,iV=G.moves.some(m=>m[0]===r&&m[1]===c),iC=G.capAnim.some(m=>m[0]===r&&m[1]===c),iSR=r===0||r===SZ-1,iL=G.lastTo&&G.lastTo[0]===r&&G.lastTo[1]===c&&!iS;const myT=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();const ck=!G.winner&&!G.matchWin&&myT&&!G.botThinking;let cls='cell';if(iSR)cls+=' start-row';if(iS)cls+=' selected';if(iV)cls+=' valid-move';if(ck)cls+=' clickable';const cf=flip?'transform:rotate(180deg);':'';h+=`<div class="${cls}" style="width:${px}px;height:${px}px;${cf}" onclick="tap(${r},${c})">`;if(cell){let pc='piece '+cell;if(iS)pc+=' selected';if(iC)pc+=' capturing';h+=`<div class="${pc}"></div>`}if(iV&&!cell)h+=`<div class="move-dot"></div>`;if(iL)h+=`<div class="last-move"></div>`;h+=`</div>`}grid.innerHTML=h}
+function renderTimers(){document.getElementById('timersContainer').innerHTML=[P,O].map(c=>{const a=G.turn===c&&!G.winner,me=G.mode==='online'&&c===myEff(),bot=G.mode==='bot'&&c===G.botColor,low=G.timers[c]<60&&G.timers[c]>0,to=G.timers[c]<=0;let cls='timer-card';if(a&&!to)cls+=' active-'+c;if(to)cls+=' timeout';const pen=G.tournament?`<div style="font-size:9px;color:${G.penalties[c]>=2?'#ef5350':'#8899aa'};margin-top:2px">⚠️ ${G.penalties[c]}/3</div>`:'';return`<div class="${cls}"><div class="timer-name ${c}">${EM[c]} ${NM[c]}${me?'<span class="me-tag">(Sen)</span>':''}${bot?' 🤖':''}${G.mode==='bot'&&c===G.myColor?'<span class="me-tag">(Sen)</span>':''}</div><div class="timer-clock ${low?'low':''}">${fmtT(G.timers[c])}</div><div class="score-line">Alınan: <b>${G.captured[c]}</b>/4 • Set: <b>${G.sets[c]}</b>/2</div>${pen}</div>`}).join('')}
+function renderStatus(){const el=document.getElementById('statusBar');el.className='status';if(G.matchWin){el.className='status match-win';el.innerHTML=`<span style="color:#ffd700">🏆 ${EM[G.matchWin]} ${NM[G.matchWin]} Maçı Kazandı!</span>`}else if(G.winner){el.className='status win';el.innerHTML=`<span style="color:#66bb6a">${EM[G.winner]} ${NM[G.winner]} seti kazandı!</span><button class="btn btn-green btn-sm" style="width:auto;padding:5px 16px;margin:0" onclick="nextSet()">Sonraki Set →</button>`}else if(G.msg)el.innerHTML=`<span style="color:#ef5350">${G.msg}</span>`;else{const my=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();const tmBadge=G.tournament?'<span style="color:#ffa944;font-size:11px"> 🏅</span>':'';if(G.mode==='bot'&&G.turn===G.botColor){el.innerHTML=`<span>🤖 Bot düşünüyor...${tmBadge}</span>`}else if(G.tournament&&G.forcedPiece){el.innerHTML=`<span>${EM[G.turn]} Taş seçildi — hedef kareye dokun${tmBadge}</span>`}else if(G.tournament){el.innerHTML=`<span>${EM[G.turn]} ${NM[G.turn]}${my?' — Bir taşa dokun':' — Bekle...'}${tmBadge}</span>`}else{el.innerHTML=`<span>${EM[G.turn]+' '+NM[G.turn]+(my?' — Senin sıran':' — Bekle...')}${tmBadge}</span>`}}}
+function renderBoard(){const grid=document.getElementById('boardGrid'),px=G.cellPx;grid.style.gridTemplateColumns=`repeat(${SZ},${px}px)`;grid.style.gridTemplateRows=`repeat(${SZ},${px}px)`;const flip=(G.mode==='online'&&myEff()===O)||(G.mode==='bot'&&G.myColor===O);grid.style.transform=flip?'rotate(180deg)':'none';const tm=G.tournament;let h='';for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){const cell=G.board[r][c],iS=G.sel&&G.sel[0]===r&&G.sel[1]===c,iV=!tm&&G.moves.some(m=>m[0]===r&&m[1]===c),iC=G.capAnim.some(m=>m[0]===r&&m[1]===c),iSR=r===0||r===SZ-1,iL=G.lastTo&&G.lastTo[0]===r&&G.lastTo[1]===c&&!iS;const myT=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();const ck=!G.winner&&!G.matchWin&&myT&&!G.botThinking;let cls='cell';if(iSR)cls+=' start-row';if(iS)cls+=' selected';if(iV)cls+=' valid-move';if(ck)cls+=' clickable';const cf=flip?'transform:rotate(180deg);':'';h+=`<div class="${cls}" style="width:${px}px;height:${px}px;${cf}" onclick="tap(${r},${c})">`;if(cell){let pc='piece '+cell;if(iS)pc+=' selected';if(iC)pc+=' capturing';h+=`<div class="${pc}"></div>`}if(iV&&!cell)h+=`<div class="move-dot"></div>`;if(iL)h+=`<div class="last-move"></div>`;h+=`</div>`}grid.innerHTML=h}
 function renderCaptured(){document.getElementById('capturedRow').innerHTML=[P,O].map(c=>{const op=OPP[c];let d='';for(let i=0;i<4;i++)d+=i<G.captured[c]?`<div class="cap-dot ${op}"></div>`:`<div class="cap-dot empty"></div>`;return`<div class="cap-group"><span class="cap-label">${NM[c]} aldı:</span>${d}</div>`}).join('')}
 function renderHistory(){const box=document.getElementById('historyBox');if(G.hist.length===0){box.classList.add('hidden');return}box.classList.remove('hidden');document.getElementById('histMoves').innerHTML=G.hist.map((m,i)=>`<span class="hist-tag ${m.p}">${i+1}. ${String.fromCharCode(65+m.f[1])}${SZ-m.f[0]}→${String.fromCharCode(65+m.t[1])}${SZ-m.t[0]}${m.c>0?' ×'+m.c:''}</span>`).join('')}
 function copyMoves(){const t=G.hist.map((m,i)=>`${i+1}. ${NM[m.p]}: ${String.fromCharCode(65+m.f[1])}${SZ-m.f[0]} → ${String.fromCharCode(65+m.t[1])}${SZ-m.t[0]}${m.c>0?' ('+m.c+' alındı)':''}`).join('\n');navigator.clipboard.writeText(t).then(()=>{const b=document.getElementById('copyBtn');b.textContent='✅ Kopyalandı!';b.classList.add('copied');setTimeout(()=>{b.textContent='📋 Kopyala';b.classList.remove('copied')},2000)}).catch(()=>{})}
@@ -453,11 +530,67 @@ function execMove(sr,sc,tr,tc){
 }
 
 // ── Tap ──
+function givePenalty(pl){
+  G.penalties[pl]++;
+  if(G.penalties[pl]>=3){
+    // 3 penalties = lose the set
+    const op=OPP[pl];
+    G.sets[op]++;G.winner=op;
+    if(G.sets[op]>=2)G.matchWin=op;
+    G.moveCount++;pushState();render();
+    showMsg("⚠️ 3 ceza! "+NM[pl]+" seti kaybetti!");
+    return true;
+  }
+  G.moveCount++;pushState();
+  showMsg("⚠️ Ceza! ("+G.penalties[pl]+"/3)");
+  return false;
+}
+
 function tap(r,c){
   if(G.winner||G.matchWin||G.botThinking)return;
   const myT=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();
   if(!myT){showMsg("Rakibin sırası!");return}
   const cell=G.board[r][c];
+
+  // ── Tournament Mode ──
+  if(G.tournament){
+    // Step 1: No piece selected yet — player touches a piece
+    if(!G.forcedPiece){
+      if(cell===G.turn){
+        // Touched own piece — forced to play it
+        const vm=getVM(G.board,r,c,G.turn);
+        G.forcedPiece=[r,c];
+        G.moves=vm; // store internally but don't show dots
+        G.sel=[r,c];
+        G.msg='';
+        if(vm.length===0){
+          // Touched piece has no valid moves — penalty, must pick another
+          G.sel=null;G.moves=[];G.forcedPiece=null;
+          if(!givePenalty(G.turn))render();
+        }else{
+          render();
+        }
+      }
+      // Touched empty or opponent piece with no selection — ignore
+      return;
+    }
+    // Step 2: Piece is forced — player taps destination
+    // Allow re-selecting same piece (no penalty, just re-highlight)
+    if(r===G.forcedPiece[0]&&c===G.forcedPiece[1])return;
+    // Check if destination is valid
+    if(G.moves.some(m=>m[0]===r&&m[1]===c)){
+      // Valid move
+      G.forcedPiece=null;
+      execMove(G.sel[0],G.sel[1],r,c);
+    }else{
+      // Invalid destination — penalty
+      G.sel=null;G.moves=[];G.forcedPiece=null;
+      if(!givePenalty(G.turn))render();
+    }
+    return;
+  }
+
+  // ── Normal Mode ──
   if(cell===G.turn){const vm=getVM(G.board,r,c,G.turn);if(vm.length>0){G.sel=[r,c];G.moves=vm;G.msg='';render()}else{G.sel=null;G.moves=[];showMsg("Gidecek yer yok!")}return}
   if(G.sel&&G.moves.some(m=>m[0]===r&&m[1]===c)){execMove(G.sel[0],G.sel[1],r,c);return}
   G.sel=null;G.moves=[];render();
@@ -466,7 +599,7 @@ function showMsg(t){G.msg=t;render();setTimeout(()=>{G.msg='';render()},2000)}
 
 // ── Actions ──
 async function nextSet(){
-  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.locks=[];G.lastMoveBy={purple:null,orange:null};
+  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.locks=[];G.lastMoveBy={purple:null,orange:null};G.penalties={purple:0,orange:0};G.forcedPiece=null;
   G.swapped=!G.swapped;const tmp=G.sets[P];G.sets[P]=G.sets[O];G.sets[O]=tmp;
   // Swap player/bot colors in bot mode
   if(G.mode==='bot'){const tmpC=G.myColor;G.myColor=G.botColor;G.botColor=tmpC}
@@ -477,7 +610,7 @@ async function nextSet(){
   if(G.mode==='bot'&&G.botColor===P&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,500);
 }
 async function resetCurrentSet(){
-  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.locks=[];G.lastMoveBy={purple:null,orange:null};
+  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.locks=[];G.lastMoveBy={purple:null,orange:null};G.penalties={purple:0,orange:0};G.forcedPiece=null;
   G.timers={purple:G.timerTotal,orange:G.timerTotal};G.moveCount++;G.lastTickTs=Date.now();
   G.botThinking=false;
   await pushState();render();
