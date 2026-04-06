@@ -187,7 +187,8 @@ h1.logo{font-size:36px;font-weight:900;margin:0 0 2px;letter-spacing:8px;backgro
     <div class="rule"><div class="rule-title">⚔️ Sıkıştırma</div><div class="rule-desc">Rakibi iki taşınla sıkıştır → al.</div></div>
     <div class="rule"><div class="rule-title">🛡️ Kendin Girersen</div><div class="rule-desc">Kendi hamlenle araya girersen alınmazsın.</div></div>
     <div class="rule"><div class="rule-title">🚫 4'lü Yasak</div><div class="rule-desc">Aynı satırda (başlangıç hariç), sütunda veya çaprazda toplam 4 taşın olamaz — aralarında boşluk olsa bile.</div></div>
-    <div class="rule"><div class="rule-title">🔒 Bölge Kilidi</div><div class="rule-desc">Bir taş A→B gidip sonra B→A dönerse, o taş 2 tur boyunca tekrar B'ye gidemez.</div></div>
+    <div class="rule"><div class="rule-title">🔒 Tekrar Yasağı</div><div class="rule-desc">Aynı taş A→B→A→B→A yapamaz. A→B→A→B'ye kadar serbest, 5. hamle engellenir.</div></div>
+    <div class="rule"><div class="rule-title">🏅 Turnuva Modu</div><div class="rule-desc">Dokunduğun taşı oynamak zorundasın. Yanlış kareye dokunursan ceza alırsın ama aynı taşı oynamaya devam etmelisin. Ancak ceza aldıktan sonra o taşın gidecek yeri yoksa cezasız başka taş seçebilirsin. 3 ceza = seti kaybedersin.</div></div>
     <button class="btn btn-primary" onclick="toggleRules()" style="margin-top:8px">Anladım!</button>
   </div>
 </div>
@@ -205,7 +206,7 @@ let G={mode:null,roomCode:null,myColor:null,board:null,turn:P,sel:null,moves:[],
   lastTo:null,capAnim:[],hist:[],msg:"",moveCount:0,swapped:false,
   timers:{purple:1200,orange:1200},timerTotal:1200,lastTickTs:null,
   botLevel:0,botColor:O,botThinking:false,
-  locks:[],lastMoveBy:{purple:null,orange:null},
+  prevMoves:{purple:[],orange:[]},
   tournament:false,penalties:{purple:0,orange:0},forcedPiece:null,
   listener:null,tickInterval:null,cellPx:46};
 
@@ -232,180 +233,194 @@ function has4(b,r,c,col){
 }
 function fCaps(b,r,c,pl){const op=OPP[pl],res=[],ds=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];for(const[dr,dc]of ds){const mr=r+dr,mc=c+dc;if(inB(mr,mc)&&b[mr][mc]===op){const fr=mr+dr,fc=mc+dc;if(inB(fr,fc)&&b[fr][fc]===pl)res.push([mr,mc])}}return res}
 function allMoves(b,pl){const ms=[];for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++)if(b[r][c]===pl){const vm=getVM(b,r,c,pl);for(const[nr,nc]of vm)ms.push({fr:r,fc:c,tr:nr,tc:nc})}return ms}
-function getVM(b,r,c,pl){if(b[r][c]!==pl)return[];const sr=pl===P?SZ-1:0,on=r===sr;let ds;if(on)ds=pl===P?[[-1,0],[-1,-1],[-1,1]]:[[1,0],[1,-1],[1,1]];else ds=[[-1,0],[1,0],[-1,-1],[-1,1],[1,-1],[1,1]];const obr=pl===P?0:SZ-1,hasOB=b.some((rw,ri)=>ri===obr&&rw.some((cell,ci)=>cell===pl&&!(ri===r&&ci===c)));const out=[];for(const[dr,dc]of ds){const nr=r+dr,nc=c+dc;if(!inB(nr,nc)||b[nr][nc]!==E)continue;if(!on&&nr===sr)continue;if(nr===obr&&hasOB)continue;const s=cl(b);s[r][c]=E;s[nr][nc]=pl;if(has4(s,nr,nc,pl))continue;if(G.locks.some(lk=>lk.p===pl&&lk.r===r&&lk.c===c&&lk.br===nr&&lk.bc===nc&&lk.t>0))continue;out.push([nr,nc])}return out}
+// Would this move create A-B-A-B-A pattern? Check player's last 4 moves.
+// Pattern: moves[-3]=A→B, moves[-1]=A→B (same piece same squares, with one other move between)
+// If so, this A→B is the 5th leg = blocked.
+function wouldRepeat(pl,fr,fc,tr,tc){
+  const h=G.prevMoves[pl];if(!h||h.length<4)return false;
+  const L=h.length;
+  // Check if current move matches h[L-2] (2 moves ago for this player) AND h[L-4] (4 moves ago)
+  // That means: h[L-4]=A→B, h[L-3]=C→D, h[L-2]=B→A, h[L-1]=D→C, now=A→B → A-B-A-B-A
+  // Simpler: look for the same piece oscillating: current=(fr,fc→tr,tc), and 2 moves ago=(tr,tc→fr,fc), and 4 moves ago=(fr,fc→tr,tc)
+  const m2=h[L-2],m4=(L>=4)?h[L-4]:null;
+  if(m2&&m2.fr===tr&&m2.fc===tc&&m2.tr===fr&&m2.tc===fc){
+    // 2 moves ago was reverse of this move. Check 4 moves ago = same as this move
+    if(m4&&m4.fr===fr&&m4.fc===fc&&m4.tr===tr&&m4.tc===tc)return true;
+  }
+  return false;
+}
+function getVM(b,r,c,pl){if(b[r][c]!==pl)return[];const sr=pl===P?SZ-1:0,on=r===sr;let ds;if(on)ds=pl===P?[[-1,0],[-1,-1],[-1,1]]:[[1,0],[1,-1],[1,1]];else ds=[[-1,0],[1,0],[-1,-1],[-1,1],[1,-1],[1,1]];const obr=pl===P?0:SZ-1,hasOB=b.some((rw,ri)=>ri===obr&&rw.some((cell,ci)=>cell===pl&&!(ri===r&&ci===c)));const out=[];for(const[dr,dc]of ds){const nr=r+dr,nc=c+dc;if(!inB(nr,nc)||b[nr][nc]!==E)continue;if(!on&&nr===sr)continue;if(nr===obr&&hasOB)continue;const s=cl(b);s[r][c]=E;s[nr][nc]=pl;if(has4(s,nr,nc,pl))continue;if(wouldRepeat(pl,r,c,nr,nc))continue;out.push([nr,nc])}return out}
 function genCode(){const ch="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let c="";for(let i=0;i<5;i++)c+=ch[Math.floor(Math.random()*ch.length)];return c}
 function myEff(){if(G.mode!=='online'||!G.myColor)return G.myColor;return G.swapped?(G.myColor===P?O:P):G.myColor}
 function fmtT(s){if(s<=0)return"0:00";const m=Math.floor(s/60),sc=Math.floor(s%60);return m+':'+(sc<10?'0':'')+sc}
 
 // ── AI Bot ──
 function evalBoard(b,pl){
-  const op=OPP[pl];let score=0;
-  const dirs8=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+  const op=OPP[pl],D=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+  let score=0;const myP=[],opP=[];
+  for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){if(b[r][c]===pl)myP.push([r,c]);else if(b[r][c]===op)opP.push([r,c])}
+  const tot=myP.length+opP.length,eg=Math.max(0,1-(tot-4)/10);
+  score+=(7-opP.length)*(50+eg*30)-(7-myP.length)*(50+eg*30);
+  const cW=(1-eg*0.6)*1.5;
+  for(const[r,c]of myP)score+=10-(Math.abs(r-3)+Math.abs(c-3))*cW;
+  for(const[r,c]of opP)score-=10-(Math.abs(r-3)+Math.abs(c-3))*cW;
+  const mm=allMoves(b,pl),om=allMoves(b,op);
+  score+=mm.length*2-om.length*2;
+  const tW=15+eg*10;
+  for(const m of mm){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;score+=fCaps(nb,m.tr,m.tc,pl).length*tW}
+  for(const m of om){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=op;score-=fCaps(nb,m.tr,m.tc,op).length*tW}
+  return score;
+}
+function evalLight(b,pl){
+  const op=OPP[pl],D=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+  let score=0;const myP=[],opP=[];
+  for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){if(b[r][c]===pl)myP.push([r,c]);else if(b[r][c]===op)opP.push([r,c])}
+  const tot=myP.length+opP.length,eg=Math.max(0,1-(tot-4)/10);
+  const myCap=7-opP.length,opCap=7-myP.length;
+  // Aggression factor: behind=more aggressive, ahead=balanced
+  const agg=opCap>myCap?1.3:(myCap>opCap?0.8:1.0);
 
-  // Collect piece positions
-  const myPcs=[],opPcs=[];
-  for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
-    if(b[r][c]===pl)myPcs.push([r,c]);
-    else if(b[r][c]===op)opPcs.push([r,c]);
+  // 1. Material — attack bonus for being ahead
+  const matW=55+eg*35;
+  score+=(myCap)*matW-(opCap)*matW;
+  if(myCap>=3)score+=80; // one away from winning set = huge bonus
+
+  // 2. Center + aggressive edge push
+  const cW=(1-eg*0.4)*1.3;
+  for(const[r,c]of myP){
+    score+=10-(Math.abs(r-3)+Math.abs(c-3))*cW;
+    // Advancement bonus: reward pushing toward opponent side
+    const adv=pl===P?(SZ-1-r):r;
+    score+=adv*(2+eg*2)*agg;
   }
-  const totalPieces=myPcs.length+opPcs.length;
-  // Endgame phase: 0.0 (opening, 14 pieces) → 1.0 (endgame, few pieces)
-  const endgame=Math.max(0,1-(totalPieces-4)/10);
-
-  // ── 1. Material (taş avantajı) ──
-  const matW=50+endgame*30; // endgame'de taş daha değerli
-  score+=(7-opPcs.length)*matW-(7-myPcs.length)*matW;
-
-  // ── 2. Center control (merkez) ── azalır endgame'de
-  const cenW=(1-endgame*0.6)*1.5;
-  for(const[r,c]of myPcs)score+=(10-(Math.abs(r-3)+Math.abs(c-3))*cenW);
-  for(const[r,c]of opPcs)score-=(10-(Math.abs(r-3)+Math.abs(c-3))*cenW);
-
-  // ── 3. Mobility ──
-  const myMov=allMoves(b,pl).length,opMov=allMoves(b,op).length;
-  score+=myMov*2-opMov*2;
-
-  // ── 4. Capture threats ──
-  const threatW=15+endgame*10;
-  for(const m of allMoves(b,pl)){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;score+=fCaps(nb,m.tr,m.tc,pl).length*threatW}
-  for(const m of allMoves(b,op)){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=op;score-=fCaps(nb,m.tr,m.tc,op).length*threatW}
-
-  // ── 5. Piece Safety (taş güvenliği) ──
-  // Her taş için: rakip onu sıkıştırabilir mi? Yanında koruyucu dost taş var mı?
-  const safeW=8+endgame*12;
-  for(const[r,c]of myPcs){
-    let danger=0,guard=0;
-    for(const[dr,dc]of dirs8){
-      const nr=r+dr,nc=c+dc;
-      if(!inB(nr,nc))continue;
-      if(b[nr][nc]===pl)guard++;
-      if(b[nr][nc]===op){
-        // Check if opponent piece on other side could sandwich me
-        const fr=r-dr,fc=c-dc;
-        if(inB(fr,fc)&&(b[fr][fc]===E))danger++; // empty behind = vulnerable
-      }
-    }
-    score+=guard*safeW*0.5 - danger*safeW;
-  }
-  for(const[r,c]of opPcs){
-    let danger=0,guard=0;
-    for(const[dr,dc]of dirs8){
-      const nr=r+dr,nc=c+dc;
-      if(!inB(nr,nc))continue;
-      if(b[nr][nc]===op)guard++;
-      if(b[nr][nc]===pl){
-        const fr=r-dr,fc=c-dc;
-        if(inB(fr,fc)&&(b[fr][fc]===E))danger++;
-      }
-    }
-    score-=guard*safeW*0.5 - danger*safeW;
+  for(const[r,c]of opP){
+    score-=10-(Math.abs(r-3)+Math.abs(c-3))*cW;
+    if(r===0||r===SZ-1||c===0||c===SZ-1)score+=(5+eg*5)*agg; // opponent on edge = good for us
+    // Corner is even worse for opponent
+    if((r===0||r===SZ-1)&&(c===0||c===SZ-1))score+=4*agg;
   }
 
-  // ── 6. Trap Potential (sıkıştırma tuzağı) ──
-  // İki dost taş arasında 1 boşluk = tuzak pozisyonu
-  const trapW=12+endgame*8;
-  for(const[dr,dc]of[[0,1],[1,0],[1,1],[1,-1]]){
-    for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
-      const mr=r+dr,mc=c+dc,fr=r+dr*2,fc=c+dc*2;
-      if(!inB(fr,fc))continue;
-      // My trap: my piece at (r,c), empty at (mr,mc), my piece at (fr,fc)
-      if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===pl)score+=trapW;
-      if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===op)score-=trapW;
-      // Active trap: my piece, opponent piece, my piece = already captured (extra reward)
-      if(b[r][c]===pl&&b[mr][mc]===op&&b[fr][fc]===pl)score+=trapW*2;
-      if(b[r][c]===op&&b[mr][mc]===pl&&b[fr][fc]===op)score-=trapW*2;
-    }
-  }
+  // 3. Safety — defend only when necessary (scaled down for attack preference)
+  const sW=(5+eg*8)*(opCap>=myCap?1.2:0.7); // defend more when behind/equal, less when ahead
+  for(const[r,c]of myP){let g=0,d=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(!inB(nr,nc))continue;if(b[nr][nc]===pl)g++;else if(b[nr][nc]===op){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E)d++}}score+=g*sW*0.4-d*sW}
+  for(const[r,c]of opP){let g=0,d=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(!inB(nr,nc))continue;if(b[nr][nc]===op)g++;else if(b[nr][nc]===pl){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E)d++}}score-=g*sW*0.4-d*sW}
 
-  // ── 7. Line penalty (4'lü yasak) ──
+  // 4. Trap + Fork — heavily boosted for attack
+  const trW=(12+eg*10)*agg;
+  for(const[dr,dc]of[[0,1],[1,0],[1,1],[1,-1]]){for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){const mr=r+dr,mc=c+dc,fr=r+dr*2,fc=c+dc*2;if(!inB(fr,fc))continue;
+    if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===pl)score+=trW; // open trap
+    if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===op)score-=trW*0.7; // opponent trap (we care less)
+    if(b[r][c]===pl&&b[mr][mc]===op&&b[fr][fc]===pl)score+=trW*3; // active sandwich!
+    if(b[r][c]===op&&b[mr][mc]===pl&&b[fr][fc]===op)score-=trW*2.5;
+  }}
+  // Fork detection — big attack bonus
+  for(const[r,c]of myP){let th=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===op){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)th++}}if(th>=2)score+=th*12*agg}
+  for(const[r,c]of opP){let th=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===pl){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)th++}}if(th>=2)score-=th*10}
+
+  // 5. Territory — attack-weighted
+  const myR=new Set(),opR=new Set();
+  for(const[r,c]of myP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===E)myR.add(nr*SZ+nc)}
+  for(const[r,c]of opP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===E)opR.add(nr*SZ+nc)}
+  score+=(myR.size-opR.size)*(4+eg*4)*agg;
+  // Mobility strangling bonus: if opponent has very few reachable squares
+  if(opR.size<=3)score+=30*agg;
+  if(opR.size<=1)score+=60*agg;
+
+  // 6. Tempo — reward forcing opponent to defend
+  let myTm=0,opTm=0;
+  for(const[r,c]of myP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===op){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)for(const[r2,c2]of myP){if(r2===r&&c2===c)continue;if(Math.abs(r2-fr)<=1&&Math.abs(c2-fc)<=1)myTm++}}}
+  for(const[r,c]of opP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===pl){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)for(const[r2,c2]of opP){if(r2===r&&c2===c)continue;if(Math.abs(r2-fr)<=1&&Math.abs(c2-fc)<=1)opTm++}}}
+  score+=(myTm-opTm)*(3+eg*4)*agg;
+
+  // 7. Coordinated attack — multiple pieces pressuring same target
+  for(const[r,c]of opP){let a=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===pl)a++}if(a>=2)score+=a*8*agg;if(a>=3)score+=15*agg}
+  for(const[r,c]of myP){let a=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===op)a++}if(a>=2)score-=a*7}
+
+  // 8. Line penalty
   for(const col of[pl,op]){const sign=col===pl?-1:1;
-    for(let r=1;r<SZ-1;r++){let cnt=0;for(let c=0;c<SZ;c++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*25}
-    for(let c=0;c<SZ;c++){let cnt=0;for(let r=0;r<SZ;r++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*25}
-    for(let s=0;s<SZ*2-1;s++){let cnt1=0,cnt2=0;for(let r=0;r<SZ;r++){const c1=s-r,c2=r-(s-SZ+1);if(c1>=0&&c1<SZ&&b[r][c1]===col)cnt1++;if(c2>=0&&c2<SZ&&b[r][c2]===col)cnt2++}if(cnt1>=4)score+=sign*9999;else if(cnt1===3)score+=sign*25;if(cnt2>=4)score+=sign*9999;else if(cnt2===3)score+=sign*25}
-  }
+    for(let r=1;r<SZ-1;r++){let cnt=0;for(let c=0;c<SZ;c++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*20}
+    for(let c=0;c<SZ;c++){let cnt=0;for(let r=0;r<SZ;r++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*20}
+    for(let s=0;s<SZ*2-1;s++){let c1n=0,c2n=0;for(let r=0;r<SZ;r++){const cc1=s-r,cc2=r-(s-SZ+1);if(cc1>=0&&cc1<SZ&&b[r][cc1]===col)c1n++;if(cc2>=0&&cc2<SZ&&b[r][cc2]===col)c2n++}if(c1n>=4)score+=sign*9999;else if(c1n===3)score+=sign*20;if(c2n>=4)score+=sign*9999;else if(c2n===3)score+=sign*20}}
   return score;
 }
 function simMove(b,m,pl){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;const caps=fCaps(nb,m.tr,m.tc,pl);for(const[cr,cc]of caps)nb[cr][cc]=E;return{board:nb,caps:caps.length}}
 
-// Light eval for deep minimax (no allMoves calls — much faster)
-function evalLight(b,pl){
-  const op=OPP[pl];let score=0;
-  const dirs8=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
-  let myN=0,opN=0;
-  for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
-    if(b[r][c]===pl){myN++;score+=10-(Math.abs(r-3)+Math.abs(c-3))*1.2;
-      // Safety quick check
-      let g=0,d=0;for(const[dr,dc]of dirs8){const nr=r+dr,nc=c+dc;if(inB(nr,nc)){if(b[nr][nc]===pl)g++;else if(b[nr][nc]===op){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E)d++}}}score+=g*3-d*6;
-    }else if(b[r][c]===op){opN++;score-=10-(Math.abs(r-3)+Math.abs(c-3))*1.2;
-      let g=0,d=0;for(const[dr,dc]of dirs8){const nr=r+dr,nc=c+dc;if(inB(nr,nc)){if(b[nr][nc]===op)g++;else if(b[nr][nc]===pl){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E)d++}}}score-=g*3-d*6;
-    }
-  }
-  score+=(7-opN)*60-(7-myN)*60;
-  // Trap quick scan
-  for(const[dr,dc]of[[0,1],[1,0],[1,1],[1,-1]]){
-    for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
-      const mr=r+dr,mc=c+dc,fr=r+dr*2,fc=c+dc*2;
-      if(!inB(fr,fc))continue;
-      if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===pl)score+=10;
-      if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===op)score-=10;
-    }
-  }
-  // Line penalty
-  for(const col of[pl,op]){const sign=col===pl?-1:1;
-    for(let r=1;r<SZ-1;r++){let cnt=0;for(let c=0;c<SZ;c++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*20}
-    for(let c=0;c<SZ;c++){let cnt=0;for(let r=0;r<SZ;r++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*20}
-  }
-  return score;
+// Score a move for ordering: attack-first priority
+function moveScore(b,m,pl){
+  const{board:nb,caps}=simMove(b,m,pl);
+  let sc=caps*200; // captures are king
+  // Does this move create a fork?
+  const D=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+  let threats=0;
+  for(const[dr,dc]of D){const nr=m.tr+dr,nc=m.tc+dc;if(inB(nr,nc)&&nb[nr][nc]===OPP[pl]){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&nb[fr][fc]===E)threats++}}
+  sc+=threats*30;
+  // Does this move create a trap (piece-gap-piece)?
+  for(const[dr,dc]of D){const fr=m.tr+dr*2,fc=m.tc+dc*2;if(inB(fr,fc)&&nb[m.tr+dr]?.[m.tc+dc]===undefined){}
+    if(inB(fr,fc)&&nb[fr]?.[fc]===pl){const mr=m.tr+dr,mc=m.tc+dc;if(inB(mr,mc)&&nb[mr][mc]===E)sc+=20}}
+  // Advancement
+  const adv=pl===P?(SZ-1-m.tr):m.tr;
+  sc+=adv*5;
+  // Does this move put us in danger? (defensive awareness)
+  for(const[dr,dc]of D){const nr=m.tr+dr,nc=m.tc+dc;if(inB(nr,nc)&&nb[nr][nc]===OPP[pl]){const fr=m.tr-dr,fc=m.tc-dc;if(inB(fr,fc)&&(nb[fr][fc]===OPP[pl]))sc-=100}} // walking into sandwich
+  return sc;
 }
 
+let mmDeadline=0;
 function minimax(b,pl,depth,alpha,beta,maximizing,botColor){
+  if(Date.now()>mmDeadline)return evalLight(b,botColor);
   if(depth===0)return evalLight(b,botColor);
   const cur=maximizing?botColor:OPP[botColor];
   const moves=allMoves(b,cur);
   if(moves.length===0)return maximizing?-9999:9999;
-  if(maximizing){
-    let best=-Infinity;
-    moves.sort((a,x)=>{const sa=simMove(b,a,cur),sb=simMove(b,x,cur);return sb.caps-sa.caps});
-    for(const m of moves){const{board:nb}=simMove(b,m,cur);const val=minimax(nb,OPP[cur],depth-1,alpha,beta,false,botColor);best=Math.max(best,val);alpha=Math.max(alpha,val);if(beta<=alpha)break}
-    return best;
-  }else{
-    let best=Infinity;
-    moves.sort((a,x)=>{const sa=simMove(b,a,cur),sb=simMove(b,x,cur);return sb.caps-sa.caps});
-    for(const m of moves){const{board:nb}=simMove(b,m,cur);const val=minimax(nb,OPP[cur],depth-1,alpha,beta,true,botColor);best=Math.min(best,val);beta=Math.min(beta,val);if(beta<=alpha)break}
-    return best;
-  }
+  // Attack-first move ordering
+  moves.sort((a,x)=>moveScore(b,x,cur)-moveScore(b,a,cur));
+  if(maximizing){let best=-Infinity;for(const m of moves){if(Date.now()>mmDeadline)break;const{board:nb}=simMove(b,m,cur);const val=minimax(nb,OPP[cur],depth-1,alpha,beta,false,botColor);best=Math.max(best,val);alpha=Math.max(alpha,val);if(beta<=alpha)break}return best}
+  else{let best=Infinity;for(const m of moves){if(Date.now()>mmDeadline)break;const{board:nb}=simMove(b,m,cur);const val=minimax(nb,OPP[cur],depth-1,alpha,beta,true,botColor);best=Math.min(best,val);beta=Math.min(beta,val);if(beta<=alpha)break}return best}
 }
 function botChoose(b,pl,level){
-  const moves=allMoves(b,pl);
-  if(moves.length===0)return null;
+  const moves=allMoves(b,pl);if(moves.length===0)return null;
   if(level===1){for(const m of moves){if(simMove(b,m,pl).caps>0)return m}return moves[Math.floor(Math.random()*moves.length)]}
   if(level===2){let best=null,bs=-Infinity;for(const m of moves){const{board:nb,caps}=simMove(b,m,pl);const sc=caps*80+evalLight(nb,pl)*0.5;if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}}return best}
   if(level===3){let best=null,bs=-Infinity;for(const m of moves){const{board:nb,caps}=simMove(b,m,pl);let sc=caps*100+evalBoard(nb,pl);for(const om of allMoves(nb,OPP[pl]))sc-=simMove(nb,om,OPP[pl]).caps*80;if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}}return best}
-  // L4:depth2, L5:depth3, L6:depth5, L7:depth6
-  const dp={4:2,5:3,6:5,7:6}[level]||3;
-  let best=null,bs=-Infinity;
-  const sc=moves.map(m=>({m,caps:simMove(b,m,pl).caps}));sc.sort((a,x)=>x.caps-a.caps);
-  for(const{m}of sc){const{board:nb}=simMove(b,m,pl);const val=minimax(nb,OPP[pl],dp-1,-Infinity,Infinity,false,pl);if(val>bs){bs=val;best=m}}
+
+  // Levels 4-7: adaptive time limit based on remaining clock
+  const maxDp={4:2,5:3,6:5,7:6}[level]||3;
+  const remaining=G.timers[G.botColor]||1200;
+  let timeLimit;
+  if(remaining>300)timeLimit=9000;       // >5 min: 9 sec
+  else if(remaining>120)timeLimit=6000;  // 2-5 min: 6 sec
+  else if(remaining>60)timeLimit=3000;   // 1-2 min: 3 sec
+  else if(remaining>20)timeLimit=1500;   // 20-60 sec: 1.5 sec
+  else timeLimit=500;                     // <20 sec: 0.5 sec
+  mmDeadline=Date.now()+timeLimit;
+
+  let best=null;
+  // Sort with attack-first scoring
+  const sorted=moves.map(m=>({m,sc:moveScore(b,m,pl)})).sort((a,x)=>x.sc-a.sc);
+  // Iterative deepening
+  for(let d=1;d<=maxDp;d++){
+    if(Date.now()>mmDeadline)break;
+    let db=null,ds=-Infinity;
+    for(const{m}of sorted){
+      if(Date.now()>mmDeadline)break;
+      const{board:nb}=simMove(b,m,pl);
+      const val=minimax(nb,OPP[pl],d-1,-Infinity,Infinity,false,pl);
+      if(val>ds){ds=val;db=m}
+    }
+    if(db)best=db;
+  }
   return best;
 }
-
 function doBotTurn(){
   if(G.winner||G.matchWin||G.turn!==G.botColor||G.botLevel===0)return;
   G.botThinking=true;render();
   const t0=Date.now();
   setTimeout(()=>{
     const move=botChoose(G.board,G.botColor,G.botLevel);
-    // Deduct thinking time from bot's clock
     const elapsed=(Date.now()-t0)/1000;
     G.timers[G.botColor]=Math.max(0,G.timers[G.botColor]-elapsed);
     G.botThinking=false;
-    if(G.timers[G.botColor]<=0){
-      // Bot ran out of time
-      G.timers[G.botColor]=0;
-      const op=OPP[G.botColor];
-      G.sets[op]++;G.winner=op;if(G.sets[op]>=2)G.matchWin=op;
-      G.moveCount++;render();return;
-    }
+    if(G.timers[G.botColor]<=0){G.timers[G.botColor]=0;const op=OPP[G.botColor];G.sets[op]++;G.winner=op;if(G.sets[op]>=2)G.matchWin=op;G.moveCount++;render();return}
     if(!move)return;
     execMove(move.fr,move.fc,move.tr,move.tc);
   },50);
@@ -475,7 +490,7 @@ async function doCreate(){
   const mins=parseInt(document.getElementById('timeInput').value)||20,ts=mins*60;
   const tourn=document.getElementById('tournamentToggle').checked;
   try{
-    await db.ref('rooms/'+code).set({board:mkB(),turn:P,captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:'',matchWin:'',lastTo:'',moveCount:0,swapped:false,timers:{purple:ts,orange:ts},timerTotal:ts,hist:[],locks:[],lastMoveBy:{purple:null,orange:null},tournament:tourn,penalties:{purple:0,orange:0},players:{purple:{uid,email},orange:null},created:firebase.database.ServerValue.TIMESTAMP});
+    await db.ref('rooms/'+code).set({board:mkB(),turn:P,captured:{purple:0,orange:0},sets:{purple:0,orange:0},winner:'',matchWin:'',lastTo:'',moveCount:0,swapped:false,timers:{purple:ts,orange:ts},timerTotal:ts,hist:[],prevMoves:{purple:[],orange:[]},tournament:tourn,penalties:{purple:0,orange:0},players:{purple:{uid,email},orange:null},created:firebase.database.ServerValue.TIMESTAMP});
     pendingRoomCode=code;
     document.getElementById('createBtn').classList.add('hidden');
     document.getElementById('createCodeDisplay').textContent=code;document.getElementById('createCodeDisplay').classList.remove('hidden');
@@ -517,11 +532,11 @@ function listenRoom(){
   ref.on('value',onRoomChange);
   G.listener=()=>{ref.off('value',onRoomChange)};
 }
-function applyRemote(d){const b=[];for(let r=0;r<SZ;r++){const w=[];for(let c=0;c<SZ;c++)w.push(d.board[r]?.[c]||E);b.push(w)}G.board=b;G.turn=d.turn||P;G.captured={purple:d.captured?.purple||0,orange:d.captured?.orange||0};G.sets={purple:d.sets?.purple||0,orange:d.sets?.orange||0};G.winner=d.winner||null;G.matchWin=d.matchWin||null;G.lastTo=d.lastTo||null;G.moveCount=d.moveCount||0;G.swapped=!!d.swapped;G.timers={purple:d.timers?.purple??G.timerTotal,orange:d.timers?.orange??G.timerTotal};G.timerTotal=d.timerTotal||1200;G.tournament=!!d.tournament;G.penalties={purple:d.penalties?.purple||0,orange:d.penalties?.orange||0};G.sel=null;G.moves=[];G.capAnim=[];G.msg='';G.forcedPiece=null;if(d.hist&&Array.isArray(d.hist))G.hist=d.hist;else if(d.hist&&typeof d.hist==='object')G.hist=Object.values(d.hist);else G.hist=[];if(d.locks&&Array.isArray(d.locks))G.locks=d.locks;else if(d.locks&&typeof d.locks==='object')G.locks=Object.values(d.locks);else G.locks=[];G.lastMoveBy=d.lastMoveBy||{purple:null,orange:null};G.lastTickTs=Date.now();updateSub()}
-async function pushState(){if(G.mode!=='online')return;try{await db.ref('rooms/'+G.roomCode).update({board:G.board,turn:G.turn,captured:G.captured,sets:G.sets,winner:G.winner||'',matchWin:G.matchWin||'',lastTo:G.lastTo||'',moveCount:G.moveCount,swapped:G.swapped,timers:G.timers,hist:G.hist,locks:G.locks,lastMoveBy:G.lastMoveBy,penalties:G.penalties})}catch(e){}}
+function applyRemote(d){const b=[];for(let r=0;r<SZ;r++){const w=[];for(let c=0;c<SZ;c++)w.push(d.board[r]?.[c]||E);b.push(w)}G.board=b;G.turn=d.turn||P;G.captured={purple:d.captured?.purple||0,orange:d.captured?.orange||0};G.sets={purple:d.sets?.purple||0,orange:d.sets?.orange||0};G.winner=d.winner||null;G.matchWin=d.matchWin||null;G.lastTo=d.lastTo||null;G.moveCount=d.moveCount||0;G.swapped=!!d.swapped;G.timers={purple:d.timers?.purple??G.timerTotal,orange:d.timers?.orange??G.timerTotal};G.timerTotal=d.timerTotal||1200;G.tournament=!!d.tournament;G.penalties={purple:d.penalties?.purple||0,orange:d.penalties?.orange||0};G.sel=null;G.moves=[];G.capAnim=[];G.msg='';G.forcedPiece=null;if(d.hist&&Array.isArray(d.hist))G.hist=d.hist;else if(d.hist&&typeof d.hist==='object')G.hist=Object.values(d.hist);else G.hist=[];const pm=d.prevMoves||{purple:[],orange:[]};G.prevMoves={purple:Array.isArray(pm.purple)?pm.purple:(pm.purple?Object.values(pm.purple):[]),orange:Array.isArray(pm.orange)?pm.orange:(pm.orange?Object.values(pm.orange):[])};G.lastTickTs=Date.now();updateSub()}
+async function pushState(){if(G.mode!=='online')return;try{await db.ref('rooms/'+G.roomCode).update({board:G.board,turn:G.turn,captured:G.captured,sets:G.sets,winner:G.winner||'',matchWin:G.matchWin||'',lastTo:G.lastTo||'',moveCount:G.moveCount,swapped:G.swapped,timers:G.timers,hist:G.hist,prevMoves:G.prevMoves,penalties:G.penalties})}catch(e){}}
 
 // ── Init ──
-function initGame(){G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.sets={purple:0,orange:0};G.winner=null;G.matchWin=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.moveCount=0;G.swapped=false;G.timers={purple:G.timerTotal,orange:G.timerTotal};G.lastTickTs=Date.now();G.botThinking=false;G.locks=[];G.lastMoveBy={purple:null,orange:null};G.penalties={purple:0,orange:0};G.forcedPiece=null;calcPx();render()}
+function initGame(){G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.sets={purple:0,orange:0};G.winner=null;G.matchWin=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.moveCount=0;G.swapped=false;G.timers={purple:G.timerTotal,orange:G.timerTotal};G.lastTickTs=Date.now();G.botThinking=false;G.prevMoves={purple:[],orange:[]};G.penalties={purple:0,orange:0};G.forcedPiece=null;calcPx();render()}
 function calcPx(){G.cellPx=Math.max(34,Math.min(52,Math.floor((Math.min(window.innerWidth||400,480)-52)/SZ)))}
 window.addEventListener('resize',()=>{calcPx();render()});
 function updateSub(){const el=document.getElementById('gameSubtitle');if(!el)return;if(G.mode==='online'){const e=myEff();el.textContent='Online • '+G.roomCode+' • Sen: '+EM[e]+' '+NM[e]+(G.swapped?' (değişti)':'')}else if(G.mode==='bot'){const names=['','😊 Kolay','😏 Orta-Alt','🧠 Orta','🔥 Orta-Üst','💪 Zor','🏆 Usta','👑 Büyükusta'];el.textContent='Bot: '+names[G.botLevel]+' • Sen: '+EM[G.myColor]+' '+NM[G.myColor]}else el.textContent='Yerel'}
@@ -529,7 +544,7 @@ function updateSub(){const el=document.getElementById('gameSubtitle');if(!el)ret
 // ── Render ──
 function render(){renderTimers();renderStatus();renderBoard();renderCaptured();renderHistory()}
 function renderTimers(){document.getElementById('timersContainer').innerHTML=[P,O].map(c=>{const a=G.turn===c&&!G.winner,me=G.mode==='online'&&c===myEff(),bot=G.mode==='bot'&&c===G.botColor,low=G.timers[c]<60&&G.timers[c]>0,to=G.timers[c]<=0;let cls='timer-card';if(a&&!to)cls+=' active-'+c;if(to)cls+=' timeout';const pen=G.tournament?`<div style="font-size:9px;color:${G.penalties[c]>=2?'#ef5350':'#8899aa'};margin-top:2px">⚠️ ${G.penalties[c]}/3</div>`:'';return`<div class="${cls}"><div class="timer-name ${c}">${EM[c]} ${NM[c]}${me?'<span class="me-tag">(Sen)</span>':''}${bot?' 🤖':''}${G.mode==='bot'&&c===G.myColor?'<span class="me-tag">(Sen)</span>':''}</div><div class="timer-clock ${low?'low':''}">${fmtT(G.timers[c])}</div><div class="score-line">Alınan: <b>${G.captured[c]}</b>/4 • Set: <b>${G.sets[c]}</b>/2</div>${pen}</div>`}).join('')}
-function renderStatus(){const el=document.getElementById('statusBar');el.className='status';if(G.matchWin){el.className='status match-win';el.innerHTML=`<span style="color:#ffd700">🏆 ${EM[G.matchWin]} ${NM[G.matchWin]} Maçı Kazandı!</span>`}else if(G.winner){el.className='status win';el.innerHTML=`<span style="color:#66bb6a">${EM[G.winner]} ${NM[G.winner]} seti kazandı!</span><button class="btn btn-green btn-sm" style="width:auto;padding:5px 16px;margin:0" onclick="nextSet()">Sonraki Set →</button>`}else if(G.msg)el.innerHTML=`<span style="color:#ef5350">${G.msg}</span>`;else{const my=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();const tmBadge=G.tournament?'<span style="color:#ffa944;font-size:11px"> 🏅</span>':'';if(G.mode==='bot'&&G.turn===G.botColor){el.innerHTML=`<span>🤖 Bot düşünüyor...${tmBadge}</span>`}else if(G.tournament&&G.forcedPiece){el.innerHTML=`<span>${EM[G.turn]} Taş seçildi — hedef kareye dokun${tmBadge}</span>`}else if(G.tournament){el.innerHTML=`<span>${EM[G.turn]} ${NM[G.turn]}${my?' — Bir taşa dokun':' — Bekle...'}${tmBadge}</span>`}else{el.innerHTML=`<span>${EM[G.turn]+' '+NM[G.turn]+(my?' — Senin sıran':' — Bekle...')}${tmBadge}</span>`}}}
+function renderStatus(){const el=document.getElementById('statusBar');el.className='status';if(G.matchWin){el.className='status match-win';el.innerHTML=`<span style="color:#ffd700">🏆 ${EM[G.matchWin]} ${NM[G.matchWin]} Maçı Kazandı!</span>`}else if(G.winner){el.className='status win';el.innerHTML=`<span style="color:#66bb6a">${EM[G.winner]} ${NM[G.winner]} seti kazandı!</span><button class="btn btn-green btn-sm" style="width:auto;padding:5px 16px;margin:0" onclick="nextSet()">Sonraki Set →</button>`}else if(G.msg)el.innerHTML=`<span style="color:#ef5350">${G.msg}</span>`;else{const my=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();const tmBadge=G.tournament?'<span style="color:#ffa944;font-size:11px"> 🏅</span>':'';if(G.mode==='bot'&&G.turn===G.botColor){el.innerHTML=`<span>🤖 Bot düşünüyor...${tmBadge}</span>`}else if(G.tournament&&G.forcedPiece){el.innerHTML=`<span>${EM[G.turn]} Taş seçildi — hedef kareye dokun (yanlış=ceza)${tmBadge}</span>`}else if(G.tournament){el.innerHTML=`<span>${EM[G.turn]} ${NM[G.turn]}${my?' — Bir taşa dokun':' — Bekle...'}${tmBadge}</span>`}else{el.innerHTML=`<span>${EM[G.turn]+' '+NM[G.turn]+(my?' — Senin sıran':' — Bekle...')}${tmBadge}</span>`}}}
 function renderBoard(){const grid=document.getElementById('boardGrid'),px=G.cellPx;grid.style.gridTemplateColumns=`repeat(${SZ},${px}px)`;grid.style.gridTemplateRows=`repeat(${SZ},${px}px)`;const flip=(G.mode==='online'&&myEff()===O)||(G.mode==='bot'&&G.myColor===O);grid.style.transform=flip?'rotate(180deg)':'none';const tm=G.tournament;let h='';for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){const cell=G.board[r][c],iS=G.sel&&G.sel[0]===r&&G.sel[1]===c,iV=!tm&&G.moves.some(m=>m[0]===r&&m[1]===c),iC=G.capAnim.some(m=>m[0]===r&&m[1]===c),iSR=r===0||r===SZ-1,iL=G.lastTo&&G.lastTo[0]===r&&G.lastTo[1]===c&&!iS;const myT=G.mode==='local'||(G.mode==='bot'&&G.turn===G.myColor)||G.turn===myEff();const ck=!G.winner&&!G.matchWin&&myT&&!G.botThinking;let cls='cell';if(iSR)cls+=' start-row';if(iS)cls+=' selected';if(iV)cls+=' valid-move';if(ck)cls+=' clickable';const cf=flip?'transform:rotate(180deg);':'';h+=`<div class="${cls}" style="width:${px}px;height:${px}px;${cf}" onclick="tap(${r},${c})">`;if(cell){let pc='piece '+cell;if(iS)pc+=' selected';if(iC)pc+=' capturing';h+=`<div class="${pc}"></div>`}if(iV&&!cell)h+=`<div class="move-dot"></div>`;if(iL)h+=`<div class="last-move"></div>`;h+=`</div>`}grid.innerHTML=h}
 function renderCaptured(){document.getElementById('capturedRow').innerHTML=[P,O].map(c=>{const op=OPP[c];let d='';for(let i=0;i<4;i++)d+=i<G.captured[c]?`<div class="cap-dot ${op}"></div>`:`<div class="cap-dot empty"></div>`;return`<div class="cap-group"><span class="cap-label">${NM[c]} aldı:</span>${d}</div>`}).join('')}
 function renderHistory(){const box=document.getElementById('historyBox');if(G.hist.length===0){box.classList.add('hidden');return}box.classList.remove('hidden');document.getElementById('histMoves').innerHTML=G.hist.map((m,i)=>`<span class="hist-tag ${m.p}">${i+1}. ${String.fromCharCode(65+m.f[1])}${SZ-m.f[0]}→${String.fromCharCode(65+m.t[1])}${SZ-m.t[0]}${m.c>0?' ×'+m.c:''}</span>`).join('')}
@@ -538,16 +553,10 @@ function copyMoves(){const t=G.hist.map((m,i)=>`${i+1}. ${NM[m.p]}: ${String.fro
 // ── Execute Move (shared by human & bot) ──
 function execMove(sr,sc,tr,tc){
   const pl=G.turn;
-  // Decrement this player's existing locks FIRST
-  G.locks=G.locks.map(lk=>lk.p===pl?{...lk,t:lk.t-1}:lk).filter(lk=>lk.t>0);
-  // Zone lock: detect reverse move (A→B then B→A)
-  const lm=G.lastMoveBy[pl];
-  if(lm&&sr===lm.tr&&sc===lm.tc&&tr===lm.fr&&tc===lm.fc){
-    // Piece going back to where it came from — lock this return for 2 of this player's turns
-    G.locks.push({p:pl,r:tr,c:tc,br:sr,bc:sc,t:2});
-  }
-  // Record this move
-  G.lastMoveBy[pl]={fr:sr,fc:sc,tr,tc};
+  // Record move in player's history (keep last 4)
+  if(!G.prevMoves[pl])G.prevMoves[pl]=[];
+  G.prevMoves[pl].push({fr:sr,fc:sc,tr,tc});
+  if(G.prevMoves[pl].length>4)G.prevMoves[pl].shift();
 
   const nb=cl(G.board);nb[sr][sc]=E;nb[tr][tc]=pl;
   const caps=fCaps(nb,tr,tc,pl);
@@ -573,13 +582,12 @@ function execMove(sr,sc,tr,tc){
 function givePenalty(pl){
   G.penalties[pl]++;
   if(G.penalties[pl]>=3){
-    // 3 penalties = lose the set
     const op=OPP[pl];
     G.sets[op]++;G.winner=op;
     if(G.sets[op]>=2)G.matchWin=op;
     G.moveCount++;pushState();render();
     showMsg("⚠️ 3 ceza! "+NM[pl]+" seti kaybetti!");
-    return true;
+    return true; // game over
   }
   G.moveCount++;pushState();
   showMsg("⚠️ Ceza! ("+G.penalties[pl]+"/3)");
@@ -597,35 +605,47 @@ function tap(r,c){
     // Step 1: No piece selected yet — player touches a piece
     if(!G.forcedPiece){
       if(cell===G.turn){
-        // Touched own piece — forced to play it
         const vm=getVM(G.board,r,c,G.turn);
         G.forcedPiece=[r,c];
-        G.moves=vm; // store internally but don't show dots
+        G.moves=vm;
         G.sel=[r,c];
         G.msg='';
         if(vm.length===0){
-          // Touched piece has no valid moves — penalty, must pick another
+          // Touched piece has no valid moves → penalty
+          const lost=givePenalty(G.turn);
+          if(lost)return;
+          // After penalty, this piece still has no moves → can switch freely
           G.sel=null;G.moves=[];G.forcedPiece=null;
-          if(!givePenalty(G.turn))render();
+          showMsg("⚠️ Ceza! ("+G.penalties[G.turn]+"/3) — Taşın hamle yapamıyor, başka taş seç");
         }else{
           render();
         }
       }
-      // Touched empty or opponent piece with no selection — ignore
       return;
     }
     // Step 2: Piece is forced — player taps destination
-    // Allow re-selecting same piece (no penalty, just re-highlight)
+    // Tapping the same forced piece again — ignore (no penalty)
     if(r===G.forcedPiece[0]&&c===G.forcedPiece[1])return;
     // Check if destination is valid
     if(G.moves.some(m=>m[0]===r&&m[1]===c)){
-      // Valid move
+      // Valid move — execute
       G.forcedPiece=null;
       execMove(G.sel[0],G.sel[1],r,c);
     }else{
-      // Invalid destination — penalty
-      G.sel=null;G.moves=[];G.forcedPiece=null;
-      if(!givePenalty(G.turn))render();
+      // Invalid destination → penalty, but MUST STILL play same piece
+      const lost=givePenalty(G.turn);
+      if(lost)return;
+      // Re-check if forced piece still has valid moves
+      const vm=getVM(G.board,G.forcedPiece[0],G.forcedPiece[1],G.turn);
+      if(vm.length>0){
+        // Still has moves — must play this piece
+        G.moves=vm;G.sel=G.forcedPiece;
+        showMsg("⚠️ Ceza! ("+G.penalties[G.turn]+"/3) — Aynı taşı oynamalısın");
+      }else{
+        // No valid moves left for this piece after penalty → can switch without extra penalty
+        G.sel=null;G.moves=[];G.forcedPiece=null;
+        showMsg("⚠️ Ceza! ("+G.penalties[G.turn]+"/3) — Taş hamle yapamıyor, başka taş seç");
+      }
     }
     return;
   }
@@ -639,7 +659,7 @@ function showMsg(t){G.msg=t;render();setTimeout(()=>{G.msg='';render()},2000)}
 
 // ── Actions ──
 async function nextSet(){
-  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.locks=[];G.lastMoveBy={purple:null,orange:null};G.penalties={purple:0,orange:0};G.forcedPiece=null;
+  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.prevMoves={purple:[],orange:[]};G.penalties={purple:0,orange:0};G.forcedPiece=null;
   G.swapped=!G.swapped;const tmp=G.sets[P];G.sets[P]=G.sets[O];G.sets[O]=tmp;
   // Swap player/bot colors in bot mode
   if(G.mode==='bot'){const tmpC=G.myColor;G.myColor=G.botColor;G.botColor=tmpC}
@@ -650,7 +670,7 @@ async function nextSet(){
   if(G.mode==='bot'&&G.botColor===P&&!G.winner&&!G.matchWin)setTimeout(doBotTurn,500);
 }
 async function resetCurrentSet(){
-  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.locks=[];G.lastMoveBy={purple:null,orange:null};G.penalties={purple:0,orange:0};G.forcedPiece=null;
+  G.board=mkB();G.turn=P;G.sel=null;G.moves=[];G.captured={purple:0,orange:0};G.winner=null;G.lastTo=null;G.capAnim=[];G.hist=[];G.msg='';G.prevMoves={purple:[],orange:[]};G.penalties={purple:0,orange:0};G.forcedPiece=null;
   G.timers={purple:G.timerTotal,orange:G.timerTotal};G.moveCount++;G.lastTickTs=Date.now();
   G.botThinking=false;
   await pushState();render();
