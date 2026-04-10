@@ -348,7 +348,7 @@ function targetedSearch(b,cur,depth,botColor,maxDepth){
   if(moves.length===0)return evalBoard(b,botColor);
   // Pruning at top layers
   let topN;
-  if(maxDepth>=6){topN=depth>=6?8:depth>=5?5:depth>=4?3:3}
+  if(maxDepth>=6){topN=depth>=6?12:depth>=5?8:depth>=4?5:3}
   else{topN=depth>=4?8:depth>=3?5:3}
   const scored=moves.map(m=>{const{board:nb,caps}=simMove(b,m,cur);return{m,nb,caps,qs:caps*150+evalBoard(nb,botColor)*(cur===botColor?1:-1)}});
   scored.sort((a,x)=>x.qs-a.qs);
@@ -435,7 +435,7 @@ function botChoose(b,pl,level){
   if(remaining<=120)return zorResult.move; // <2 dk → Zor gibi oyna
   const searchDepth=(level===5&&remaining>300)?6:4; // Büyükusta >5dk → depth 6, else Usta depth 4
 
-  tsDeadline=Date.now()+9000;
+  tsDeadline=Date.now()+12000;
   let best=zorResult.move,bs=-Infinity; // fallback to Zor's pick
   const sorted=moves.map(m=>{const{board:nb,caps}=simMove(b,m,pl);return{m,nb,caps,qs:caps*150+evalBoard(nb,pl)}});
   sorted.sort((a,x)=>x.qs-a.qs);
