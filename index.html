@@ -299,18 +299,56 @@ function evalBoard(b,pl){
 }
 function simMove(b,m,pl){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;const caps=fCaps(nb,m.tr,m.tc,pl);for(const[cr,cc]of caps)nb[cr][cc]=E;return{board:nb,caps:caps.length}}
 
-// Targeted deep search: prunes at each depth, wider at top, tighter deeper
+// Hybrid deep search: targetedSearch at top, minimax at bottom, capture extension
 let tsDeadline=0;
+
+// Bottom layer: full minimax with alpha-beta (no pruning, all moves)
+function miniBottom(b,cur,depth,alpha,beta,maximizing,botColor){
+  if(Date.now()>tsDeadline)return evalBoard(b,botColor);
+  if(depth===0)return evalBoard(b,botColor);
+  const moves=allMoves(b,cur);
+  if(moves.length===0)return evalBoard(b,botColor);
+  // Sort: captures first for better pruning
+  moves.sort((a,x)=>simMove(b,x,cur).caps-simMove(b,a,cur).caps);
+  if(maximizing){
+    let best=-Infinity;
+    for(const m of moves){
+      if(Date.now()>tsDeadline)break;
+      const{board:nb,caps}=simMove(b,m,cur);
+      // Capture extension: if this move captures, search 2 deeper
+      const ext=(caps>0&&depth<=2)?2:0;
+      const val=miniBottom(nb,OPP[cur],depth-1+ext,alpha,beta,false,botColor);
+      best=Math.max(best,val+caps*120);alpha=Math.max(alpha,best);
+      if(beta<=alpha)break;
+    }
+    return best;
+  }else{
+    let best=Infinity;
+    for(const m of moves){
+      if(Date.now()>tsDeadline)break;
+      const{board:nb,caps}=simMove(b,m,cur);
+      const ext=(caps>0&&depth<=2)?2:0;
+      const val=miniBottom(nb,OPP[cur],depth-1+ext,alpha,beta,true,botColor);
+      best=Math.min(best,val-caps*120);beta=Math.min(beta,best);
+      if(beta<=alpha)break;
+    }
+    return best;
+  }
+}
+
+// Top layer: targetedSearch with pruning, hands off to miniBottom at depth 3
 function targetedSearch(b,cur,depth,botColor,maxDepth){
   if(Date.now()>tsDeadline)return evalBoard(b,botColor);
   if(depth===0)return evalBoard(b,botColor);
-  // Büyükusta: after 5 half-moves (depth<=2), if position is clearly winning, stop early
+  // Büyükusta early exit: after 5 half-moves, if clearly winning, stop
   if(maxDepth>=6&&depth<=2){const earlyScore=evalBoard(b,botColor);if(earlyScore>400)return earlyScore}
+  // Switch to full minimax at depth <=3 (last 3 half-moves)
+  if(depth<=3)return miniBottom(b,cur,depth,-Infinity,Infinity,cur===botColor,botColor);
   const moves=allMoves(b,cur);
   if(moves.length===0)return evalBoard(b,botColor);
-  // Pruning based on depth — Büyükusta(6): 8,5,3,3,2,leaf / Usta(4): 5,4,3,leaf
+  // Pruning at top layers
   let topN;
-  if(maxDepth>=6){topN=depth>=6?8:depth>=5?5:depth>=4?3:depth>=3?3:2}
+  if(maxDepth>=6){topN=depth>=6?8:depth>=5?5:depth>=4?3:3}
   else{topN=depth>=4?8:depth>=3?5:3}
   const scored=moves.map(m=>{const{board:nb,caps}=simMove(b,m,cur);return{m,nb,caps,qs:caps*150+evalBoard(nb,botColor)*(cur===botColor?1:-1)}});
   scored.sort((a,x)=>x.qs-a.qs);
