@@ -260,102 +260,39 @@ function evalBoard(b,pl){
   const tot=myP.length+opP.length,eg=Math.max(0,1-(tot-4)/10);
   const myCap=7-opP.length,opCap=7-myP.length;
   const agg=opCap>myCap?1.3:(myCap>opCap?0.8:1.0);
-  const def=opCap>=myCap?1.3:0.8; // defense factor
-
+  const def=opCap>=myCap?1.3:0.8;
   // 1. Material
   score+=myCap*(55+eg*35)-opCap*(55+eg*35);
   if(myCap>=3)score+=80;
-  if(opCap>=3)score-=90*def; // opponent close to winning = danger
-
+  if(opCap>=3)score-=90*def;
   // 2. Center + advancement + edge push
   const cW=(1-eg*0.4)*1.3;
   for(const[r,c]of myP){score+=10-(Math.abs(r-3)+Math.abs(c-3))*cW;score+=(pl===P?(SZ-1-r):r)*(2+eg*2)*agg}
   for(const[r,c]of opP){score-=10-(Math.abs(r-3)+Math.abs(c-3))*cW;if(r===0||r===SZ-1||c===0||c===SZ-1)score+=(5+eg*5)*agg;if((r===0||r===SZ-1)&&(c===0||c===SZ-1))score+=4*agg}
-
-  // 3. Safety — enhanced defense
+  // 3. Safety
   const sW=(7+eg*12)*def;
-  for(const[r,c]of myP){
-    let g=0,d=0,exposed=true;
-    for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(!inB(nr,nc))continue;
-      if(b[nr][nc]===pl){g++;exposed=false}
-      else if(b[nr][nc]===op){const fr=r-dr,fc=c-dc;
-        if(inB(fr,fc)&&b[fr][fc]===E){d++;
-          // Double danger: opponent could sandwich from both sides (O_X_O)
-          const fr2=r+dr*2,fc2=c+dc*2;
-          if(inB(fr2,fc2)&&b[fr2][fc2]===op)d+=2;
-        }
-      }
-    }
-    score+=g*sW*0.5-d*sW;
-    if(exposed)score-=sW*0.6; // isolated piece penalty
-  }
-  for(const[r,c]of opP){
-    let g=0,d=0,exposed=true;
-    for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(!inB(nr,nc))continue;
-      if(b[nr][nc]===op){g++;exposed=false}
-      else if(b[nr][nc]===pl){const fr=r-dr,fc=c-dc;
-        if(inB(fr,fc)&&b[fr][fc]===E){d++;
-          const fr2=r+dr*2,fc2=c+dc*2;
-          if(inB(fr2,fc2)&&b[fr2][fc2]===pl)d+=2;
-        }
-      }
-    }
-    score-=g*sW*0.5-d*sW;
-    if(exposed)score+=sW*0.6;
-  }
-
-  // 4. Trap + Fork + Two-gap structures
+  for(const[r,c]of myP){let g=0,d=0,exposed=true;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(!inB(nr,nc))continue;if(b[nr][nc]===pl){g++;exposed=false}else if(b[nr][nc]===op){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E){d++;const fr2=r+dr*2,fc2=c+dc*2;if(inB(fr2,fc2)&&b[fr2][fc2]===op)d+=2}}}score+=g*sW*0.5-d*sW;if(exposed)score-=sW*0.6}
+  for(const[r,c]of opP){let g=0,d=0,exposed=true;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(!inB(nr,nc))continue;if(b[nr][nc]===op){g++;exposed=false}else if(b[nr][nc]===pl){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E){d++;const fr2=r+dr*2,fc2=c+dc*2;if(inB(fr2,fc2)&&b[fr2][fc2]===pl)d+=2}}}score-=g*sW*0.5-d*sW;if(exposed)score+=sW*0.6}
+  // 4. Trap + Fork + Two-gap
   const trW=(12+eg*10)*agg;
   const dirs4=[[0,1],[1,0],[1,1],[1,-1]];
-  for(const[dr,dc]of dirs4){for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){
-    const mr=r+dr,mc=c+dc,fr=r+dr*2,fc=c+dc*2;
-    if(!inB(fr,fc))continue;
-    // One-gap: piece-empty-piece
-    if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===pl)score+=trW;
-    if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===op)score-=trW*def;
-    // Active sandwich
-    if(b[r][c]===pl&&b[mr][mc]===op&&b[fr][fc]===pl)score+=trW*3;
-    if(b[r][c]===op&&b[mr][mc]===pl&&b[fr][fc]===op)score-=trW*3*def;
-    // Two-gap: piece-empty-empty-piece (defensive wall / long range trap)
-    const gr=r+dr*3,gc=c+dc*3;
-    if(inB(gr,gc)){
-      if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===E&&b[gr][gc]===pl){
-        score+=(8+eg*6)*def;
-        for(const[r2,c2]of opP){
-          if((Math.abs(r2-mr)<=1&&Math.abs(c2-mc)<=1)||(Math.abs(r2-fr)<=1&&Math.abs(c2-fc)<=1))
-            score+=(5+eg*4)*agg; // opponent near gaps = trap potential
-        }
-      }
-      if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===E&&b[gr][gc]===op){
-        score-=(8+eg*6);
-        for(const[r2,c2]of myP){
-          if((Math.abs(r2-mr)<=1&&Math.abs(c2-mc)<=1)||(Math.abs(r2-fr)<=1&&Math.abs(c2-fc)<=1))
-            score-=(5+eg*4);
-        }
-      }
-    }
-  }}
-  // Fork detection
+  for(const[dr,dc]of dirs4){for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){const mr=r+dr,mc=c+dc,fr=r+dr*2,fc=c+dc*2;if(!inB(fr,fc))continue;if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===pl)score+=trW;if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===op)score-=trW*def;if(b[r][c]===pl&&b[mr][mc]===op&&b[fr][fc]===pl)score+=trW*3;if(b[r][c]===op&&b[mr][mc]===pl&&b[fr][fc]===op)score-=trW*3*def;const gr=r+dr*3,gc=c+dc*3;if(inB(gr,gc)){if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===E&&b[gr][gc]===pl)score+=(8+eg*6)*def;if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===E&&b[gr][gc]===op)score-=(8+eg*6)}}}
   for(const[r,c]of myP){let th=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===op){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)th++}}if(th>=2)score+=th*12*agg}
   for(const[r,c]of opP){let th=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===pl){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)th++}}if(th>=2)score-=th*12*def}
-
   // 5. Territory
   const myR=new Set(),opR=new Set();
   for(const[r,c]of myP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===E)myR.add(nr*SZ+nc)}
   for(const[r,c]of opP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===E)opR.add(nr*SZ+nc)}
   score+=(myR.size-opR.size)*(4+eg*4)*agg;
   if(opR.size<=3)score+=30*agg;if(opR.size<=1)score+=60*agg;
-
   // 6. Tempo
   let myTm=0,opTm=0;
   for(const[r,c]of myP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===op){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)for(const[r2,c2]of myP){if(r2===r&&c2===c)continue;if(Math.abs(r2-fr)<=1&&Math.abs(c2-fc)<=1)myTm++}}}
   for(const[r,c]of opP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===pl){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)for(const[r2,c2]of opP){if(r2===r&&c2===c)continue;if(Math.abs(r2-fr)<=1&&Math.abs(c2-fc)<=1)opTm++}}}
   score+=(myTm-opTm)*(3+eg*4)*agg;
-
-  // 7. Coordinated attack — symmetric defense
+  // 7. Coordinated attack
   for(const[r,c]of opP){let a=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===pl)a++}if(a>=2)score+=a*8*agg;if(a>=3)score+=15*agg}
   for(const[r,c]of myP){let a=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===op)a++}if(a>=2)score-=a*8*def;if(a>=3)score-=15*def}
-
   // 8. Line penalty
   for(const col of[pl,op]){const sign=col===pl?-1:1;
     for(let r=1;r<SZ-1;r++){let cnt=0;for(let c=0;c<SZ;c++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*20}
@@ -364,104 +301,122 @@ function evalBoard(b,pl){
   return score;
 }
 
+// Fast eval for minimax leaves (no allMoves — pure board scan)
+function evalLight(b,pl){
+  const op=OPP[pl],D=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+  let score=0;const myP=[],opP=[];
+  for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){if(b[r][c]===pl)myP.push([r,c]);else if(b[r][c]===op)opP.push([r,c])}
+  const tot=myP.length+opP.length,eg=Math.max(0,1-(tot-4)/10);
+  const myCap=7-opP.length,opCap=7-myP.length;
+  const agg=opCap>myCap?1.3:(myCap>opCap?0.8:1.0);
+  const def=opCap>=myCap?1.3:0.8;
+  // 1. Material
+  score+=myCap*(55+eg*35)-opCap*(55+eg*35);
+  if(myCap>=3)score+=80;if(opCap>=3)score-=90*def;
+  // 2. Center + advancement + edge push
+  const cW=(1-eg*0.4)*1.3;
+  for(const[r,c]of myP){score+=10-(Math.abs(r-3)+Math.abs(c-3))*cW;score+=(pl===P?(SZ-1-r):r)*(2+eg*2)*agg}
+  for(const[r,c]of opP){score-=10-(Math.abs(r-3)+Math.abs(c-3))*cW;if(r===0||r===SZ-1||c===0||c===SZ-1)score+=(5+eg*5)*agg;if((r===0||r===SZ-1)&&(c===0||c===SZ-1))score+=4*agg}
+  // 3. Safety
+  const sW=(7+eg*12)*def;
+  for(const[r,c]of myP){let g=0,d=0,ex=true;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(!inB(nr,nc))continue;if(b[nr][nc]===pl){g++;ex=false}else if(b[nr][nc]===op){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E){d++;const f2=r+dr*2,g2=c+dc*2;if(inB(f2,g2)&&b[f2][g2]===op)d+=2}}}score+=g*sW*0.5-d*sW;if(ex)score-=sW*0.6}
+  for(const[r,c]of opP){let g=0,d=0,ex=true;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(!inB(nr,nc))continue;if(b[nr][nc]===op){g++;ex=false}else if(b[nr][nc]===pl){const fr=r-dr,fc=c-dc;if(inB(fr,fc)&&b[fr][fc]===E){d++;const f2=r+dr*2,g2=c+dc*2;if(inB(f2,g2)&&b[f2][g2]===pl)d+=2}}}score-=g*sW*0.5-d*sW;if(ex)score+=sW*0.6}
+  // 4. Trap + Fork + Two-gap
+  const trW=(12+eg*10)*agg;
+  for(const[dr,dc]of[[0,1],[1,0],[1,1],[1,-1]]){for(let r=0;r<SZ;r++)for(let c=0;c<SZ;c++){const mr=r+dr,mc=c+dc,fr=r+dr*2,fc=c+dc*2;if(!inB(fr,fc))continue;if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===pl)score+=trW;if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===op)score-=trW*def;if(b[r][c]===pl&&b[mr][mc]===op&&b[fr][fc]===pl)score+=trW*3;if(b[r][c]===op&&b[mr][mc]===pl&&b[fr][fc]===op)score-=trW*3*def;const gr=r+dr*3,gc=c+dc*3;if(inB(gr,gc)){if(b[r][c]===pl&&b[mr][mc]===E&&b[fr][fc]===E&&b[gr][gc]===pl)score+=(8+eg*6)*def;if(b[r][c]===op&&b[mr][mc]===E&&b[fr][fc]===E&&b[gr][gc]===op)score-=(8+eg*6)}}}
+  for(const[r,c]of myP){let th=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===op){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)th++}}if(th>=2)score+=th*12*agg}
+  for(const[r,c]of opP){let th=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===pl){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&b[fr][fc]===E)th++}}if(th>=2)score-=th*12*def}
+  // 5. Territory
+  const myR=new Set(),opR=new Set();
+  for(const[r,c]of myP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===E)myR.add(nr*SZ+nc)}
+  for(const[r,c]of opP)for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===E)opR.add(nr*SZ+nc)}
+  score+=(myR.size-opR.size)*(4+eg*4)*agg;
+  if(opR.size<=3)score+=30*agg;if(opR.size<=1)score+=60*agg;
+  // 6. Coordinated attack
+  for(const[r,c]of opP){let a=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===pl)a++}if(a>=2)score+=a*8*agg;if(a>=3)score+=15*agg}
+  for(const[r,c]of myP){let a=0;for(const[dr,dc]of D){const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&b[nr][nc]===op)a++}if(a>=2)score-=a*8*def;if(a>=3)score-=15*def}
+  // 7. Back row infiltration potential
+  const myTarget=pl===P?0:SZ-1; // opponent's back row
+  const opTarget=pl===P?SZ-1:0;
+  for(const[r,c]of myP){
+    const dist=Math.abs(r-myTarget);
+    if(dist<=3&&dist>0){
+      // Close to opponent back row — check if path is relatively clear
+      const dir=myTarget<r?-1:1;
+      let blocked=0;
+      for(let step=1;step<=dist;step++){const nr=r+dir*step;if(inB(nr,c)&&b[nr][c]!==E)blocked++}
+      if(blocked===0)score+=(4-dist)*(6+eg*8)*agg; // clear path bonus
+      else if(blocked===1)score+=(4-dist)*(3+eg*4)*agg; // partially clear
+    }
+    if(r===myTarget)score+=(10+eg*10)*agg; // already on back row = strong position
+  }
+  for(const[r,c]of opP){
+    const dist=Math.abs(r-opTarget);
+    if(dist<=3&&dist>0){
+      const dir=opTarget<r?-1:1;
+      let blocked=0;
+      for(let step=1;step<=dist;step++){const nr=r+dir*step;if(inB(nr,c)&&b[nr][c]!==E)blocked++}
+      if(blocked===0)score-=(4-dist)*(6+eg*8); // opponent approaching our back row
+      else if(blocked===1)score-=(4-dist)*(3+eg*4);
+    }
+    if(r===opTarget)score-=(10+eg*10);
+  }
+  // 8. Line penalty
+  for(const col of[pl,op]){const sign=col===pl?-1:1;
+    for(let r=1;r<SZ-1;r++){let cnt=0;for(let c=0;c<SZ;c++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*20}
+    for(let c=0;c<SZ;c++){let cnt=0;for(let r=0;r<SZ;r++)if(b[r][c]===col)cnt++;if(cnt>=4)score+=sign*9999;else if(cnt===3)score+=sign*20}}
+  return score;
+}
+
 function simMove(b,m,pl){const nb=cl(b);nb[m.fr][m.fc]=E;nb[m.tr][m.tc]=pl;const caps=fCaps(nb,m.tr,m.tc,pl);for(const[cr,cc]of caps)nb[cr][cc]=E;return{board:nb,caps:caps.length}}
 
-// Hybrid deep search: targetedSearch at top, minimax at bottom, capture extension
-let tsDeadline=0;
+// Score a move for ordering: attack-first priority
+function moveScore(b,m,pl){
+  const{board:nb,caps}=simMove(b,m,pl);
+  let sc=caps*200;
+  const D=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+  // Fork: threats from landing square
+  let threats=0;
+  for(const[dr,dc]of D){const nr=m.tr+dr,nc=m.tc+dc;if(inB(nr,nc)&&nb[nr][nc]===OPP[pl]){const fr=nr+dr,fc=nc+dc;if(inB(fr,fc)&&nb[fr][fc]===E)threats++}}
+  sc+=threats*30;
+  // Trap: piece-gap-piece from landing square
+  for(const[dr,dc]of D){const fr=m.tr+dr*2,fc=m.tc+dc*2;if(inB(fr,fc)&&nb[fr]?.[fc]===pl){const mr=m.tr+dr,mc=m.tc+dc;if(inB(mr,mc)&&nb[mr][mc]===E)sc+=20}}
+  // Advancement
+  sc+=(pl===P?(SZ-1-m.tr):m.tr)*5;
+  // Danger: walking into sandwich
+  for(const[dr,dc]of D){const nr=m.tr+dr,nc=m.tc+dc;if(inB(nr,nc)&&nb[nr][nc]===OPP[pl]){const fr=m.tr-dr,fc=m.tc-dc;if(inB(fr,fc)&&nb[fr][fc]===OPP[pl])sc-=100}}
+  return sc;
+}
 
-// Bottom layer: full minimax with alpha-beta (no pruning, all moves)
-function miniBottom(b,cur,depth,alpha,beta,maximizing,botColor){
-  if(Date.now()>tsDeadline)return evalBoard(b,botColor);
-  if(depth===0)return evalBoard(b,botColor);
+// Minimax with alpha-beta + time limit + moveScore ordering
+let mmDeadline=0;
+function minimax(b,depth,alpha,beta,maximizing,botColor){
+  if(Date.now()>mmDeadline)return evalLight(b,botColor);
+  if(depth===0)return evalLight(b,botColor);
+  const cur=maximizing?botColor:OPP[botColor];
   const moves=allMoves(b,cur);
-  if(moves.length===0)return evalBoard(b,botColor);
-  // Sort: captures first for better pruning
-  moves.sort((a,x)=>simMove(b,x,cur).caps-simMove(b,a,cur).caps);
+  if(moves.length===0)return maximizing?-9999:9999;
+  // Attack-first move ordering for better pruning
+  moves.sort((a,x)=>moveScore(b,x,cur)-moveScore(b,a,cur));
   if(maximizing){
     let best=-Infinity;
-    for(const m of moves){
-      if(Date.now()>tsDeadline)break;
-      const{board:nb,caps}=simMove(b,m,cur);
-      // Capture extension: if this move captures, search 2 deeper
-      const ext=(caps>0&&depth<=2)?2:0;
-      const val=miniBottom(nb,OPP[cur],depth-1+ext,alpha,beta,false,botColor);
-      best=Math.max(best,val+caps*120);alpha=Math.max(alpha,best);
-      if(beta<=alpha)break;
-    }
+    for(const m of moves){if(Date.now()>mmDeadline)break;const{board:nb,caps}=simMove(b,m,cur);const val=minimax(nb,depth-1,alpha,beta,false,botColor);best=Math.max(best,val+caps*120);alpha=Math.max(alpha,best);if(beta<=alpha)break}
     return best;
   }else{
     let best=Infinity;
-    for(const m of moves){
-      if(Date.now()>tsDeadline)break;
-      const{board:nb,caps}=simMove(b,m,cur);
-      const ext=(caps>0&&depth<=2)?2:0;
-      const val=miniBottom(nb,OPP[cur],depth-1+ext,alpha,beta,true,botColor);
-      best=Math.min(best,val-caps*120);beta=Math.min(beta,best);
-      if(beta<=alpha)break;
-    }
+    for(const m of moves){if(Date.now()>mmDeadline)break;const{board:nb,caps}=simMove(b,m,cur);const val=minimax(nb,depth-1,alpha,beta,true,botColor);best=Math.min(best,val-caps*120);beta=Math.min(beta,best);if(beta<=alpha)break}
     return best;
-  }
-}
-
-// Top layer: targetedSearch with pruning, hands off to miniBottom at depth 3
-function targetedSearch(b,cur,depth,botColor,maxDepth){
-  if(Date.now()>tsDeadline)return evalBoard(b,botColor);
-  if(depth===0)return evalBoard(b,botColor);
-  // Büyükusta early exit: after 5 half-moves, if clearly winning, stop
-  if(maxDepth>=6&&depth<=2){const earlyScore=evalBoard(b,botColor);if(earlyScore>400)return earlyScore}
-  // Switch to full minimax at depth <=3 (last 3 half-moves)
-  if(depth<=3)return miniBottom(b,cur,depth,-Infinity,Infinity,cur===botColor,botColor);
-  const moves=allMoves(b,cur);
-  if(moves.length===0)return evalBoard(b,botColor);
-  // Pruning at top layers
-  let topN;
-  if(maxDepth>=6){topN=depth>=6?12:depth>=5?8:depth>=4?5:3}
-  else{topN=depth>=4?8:depth>=3?5:3}
-  const scored=moves.map(m=>{const{board:nb,caps}=simMove(b,m,cur);return{m,nb,caps,qs:caps*150+evalBoard(nb,botColor)*(cur===botColor?1:-1)}});
-  scored.sort((a,x)=>x.qs-a.qs);
-  const top=scored.slice(0,topN);
-  const isBot=cur===botColor;
-  if(isBot){
-    let best=-Infinity;
-    for(const{m,nb,caps}of top){
-      if(Date.now()>tsDeadline)break;
-      const child=targetedSearch(nb,OPP[cur],depth-1,botColor,maxDepth);
-      const sc=child+caps*120;
-      if(sc>best)best=sc;
-    }
-    return best;
-  }else{
-    let worst=Infinity;
-    for(const{m,nb,caps}of top){
-      if(Date.now()>tsDeadline)break;
-      const child=targetedSearch(nb,OPP[cur],depth-1,botColor,maxDepth);
-      const sc=child-caps*120;
-      if(sc<worst)worst=sc;
-    }
-    return worst;
   }
 }
 
 function botChoose(b,pl,level){
   const moves=allMoves(b,pl);if(moves.length===0)return null;
-  // Level 1: Kolay — capture or random
-  if(level===1){
-    for(const m of moves){if(simMove(b,m,pl).caps>0)return m}
-    return moves[Math.floor(Math.random()*moves.length)];
-  }
-  // Level 2: Orta — score each move
-  if(level===2){
-    let best=null,bs=-Infinity;
-    for(const m of moves){
-      const{board:nb,caps}=simMove(b,m,pl);
-      const sc=caps*100+evalBoard(nb,pl);
-      if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}
-    }
-    return best;
-  }
-  // Level 3: Zor — score + opponent danger (3 half-moves)
-  // Also used as quick scan for Usta/Büyükusta early exit
-  function zorEval(moves,b,pl){
+  // Level 1: Kolay
+  if(level===1){for(const m of moves){if(simMove(b,m,pl).caps>0)return m}return moves[Math.floor(Math.random()*moves.length)]}
+  // Level 2: Orta
+  if(level===2){let best=null,bs=-Infinity;for(const m of moves){const{board:nb,caps}=simMove(b,m,pl);const sc=caps*100+evalBoard(nb,pl);if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}}return best}
+  // Level 3: Zor
+  if(level===3){
     let best=null,bs=-Infinity;
     for(const m of moves){
       const{board:nb,caps}=simMove(b,m,pl);
@@ -469,47 +424,48 @@ function botChoose(b,pl,level){
       const opMoves=allMoves(nb,OPP[pl]);
       for(const om of opMoves){const{caps:oc}=simMove(nb,om,OPP[pl]);sc-=oc*90}
       let opForks=0;
-      for(const om of opMoves){
-        const{board:nb2,caps:oc}=simMove(nb,om,OPP[pl]);
-        if(oc>0)continue;
-        const op2=allMoves(nb2,OPP[pl]);
-        let threats=0;for(const om2 of op2){if(simMove(nb2,om2,OPP[pl]).caps>0)threats++}
-        if(threats>=2)opForks++;
-      }
+      for(const om of opMoves){const{board:nb2,caps:oc}=simMove(nb,om,OPP[pl]);if(oc>0)continue;const op2=allMoves(nb2,OPP[pl]);let threats=0;for(const om2 of op2){if(simMove(nb2,om2,OPP[pl]).caps>0)threats++}if(threats>=2)opForks++}
       sc-=opForks*40;
       if(sc>bs||(sc===bs&&Math.random()>.5)){bs=sc;best=m}
     }
-    return{move:best,score:bs};
+    return best;
   }
+  // Level 4: Usta (minimax 5) / Level 5: Büyükusta (minimax 7)
+  // Quick check: run Zor-level eval first
+  let zorBest=null,zorBs=-Infinity;
+  for(const m of moves){
+    const{board:nb,caps}=simMove(b,m,pl);
+    let sc=caps*120+evalBoard(nb,pl);
+    const opMoves=allMoves(nb,OPP[pl]);
+    for(const om of opMoves){const{caps:oc}=simMove(nb,om,OPP[pl]);sc-=oc*90}
+    let opForks=0;
+    for(const om of opMoves){const{board:nb2,caps:oc}=simMove(nb,om,OPP[pl]);if(oc>0)continue;const op2=allMoves(nb2,OPP[pl]);let threats=0;for(const om2 of op2){if(simMove(nb2,om2,OPP[pl]).caps>0)threats++}if(threats>=2)opForks++}
+    sc-=opForks*40;
+    if(sc>zorBs||(sc===zorBs&&Math.random()>.5)){zorBs=sc;zorBest=m}
+  }
+  // If Zor finds a clearly winning move, skip minimax
+  if(zorBs>500)return zorBest;
 
-  if(level===3)return zorEval(moves,b,pl).move;
-
-  // Level 4: Usta (5 half-moves) / Level 5: Büyükusta (7 half-moves)
-  const zorResult=zorEval(moves,b,pl);
-  if(zorResult.score>400)return zorResult.move; // obvious win — don't waste time
-
-  // Count opponent pieces in center (3×3 area around 3,3)
-  const op=OPP[pl];let opCenter=0;
-  for(let r=2;r<=4;r++)for(let c=2;c<=4;c++)if(b[r][c]===op)opCenter++;
-
-  // Opening phase: play as Zor until game develops
-  const earlyMoves=level===5?10:15; // Büyükusta: first 10, Usta: first 15
-  if(G.moveCount<earlyMoves||opCenter<2)return zorResult.move;
-
+  const maxDp=level===5?7:5;
   const remaining=G.timers[G.botColor]||1200;
-
-  // Büyükusta/Usta: degrade to Zor when time is low
-  if(remaining<=120)return zorResult.move; // <2 dk → Zor gibi oyna
-  const searchDepth=(level===5&&remaining>300)?6:4; // Büyükusta >5dk → depth 6, else Usta depth 4
-
-  tsDeadline=Date.now()+12000;
-  let best=zorResult.move,bs=-Infinity; // fallback to Zor's pick
-  const sorted=moves.map(m=>{const{board:nb,caps}=simMove(b,m,pl);return{m,nb,caps,qs:caps*150+evalBoard(nb,pl)}});
-  sorted.sort((a,x)=>x.qs-a.qs);
-  for(const{m,nb,caps}of sorted){
-    if(Date.now()>tsDeadline)break;
-    const sc=caps*120+targetedSearch(nb,OPP[pl],searchDepth,pl,searchDepth);
-    if(sc>bs){bs=sc;best=m}
+  if(remaining<=120){
+    // <2 dk: Zor gibi oyna
+    return botChoose(b,pl,3);
+  }
+  mmDeadline=Date.now()+12000;
+  // Sort root moves by quick eval
+  const sorted=moves.map(m=>{const{board:nb,caps}=simMove(b,m,pl);return{m,nb,caps,qs:caps*150+evalBoard(nb,pl)}}).sort((a,x)=>x.qs-a.qs);
+  // Iterative deepening — fallback to Zor's pick
+  let best=zorBest;
+  for(let d=1;d<=maxDp;d++){
+    if(Date.now()>mmDeadline)break;
+    let db=null,ds=-Infinity;
+    for(const{m,nb,caps}of sorted){
+      if(Date.now()>mmDeadline)break;
+      const val=caps*120+minimax(nb,d-1,-Infinity,Infinity,false,pl);
+      if(val>ds){ds=val;db=m}
+    }
+    if(db)best=db;
   }
   return best;
 }
